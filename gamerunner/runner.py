@@ -11,7 +11,7 @@ for i in range(BigTwo.number_of_players()):
 big_two_game = BigTwo(player_list, deck)
 
 while True:
-    current_player, current_player_number = big_two_game.get_next_player()
+    current_player, current_player_number = big_two_game.get_current_player()
     obs = big_two_game.current_observation(current_player_number)
     action = current_player.action(obs)
 
