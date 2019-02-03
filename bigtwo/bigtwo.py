@@ -10,6 +10,13 @@ def have_diamond_three(hand):
     return False
 
 
+class BigTwoPlayerObservation:
+    def __init__(self, num_card_per_player, cards_played, your_hands):
+        self.num_card_per_player = num_card_per_player
+        self.cards_played = cards_played
+        self.your_hands = your_hands
+
+
 class BigTwo:
     FULL_HOUSE = 1
     FOUR_OF_A_KIND = 2
@@ -81,7 +88,7 @@ class BigTwo:
         return False
 
     @staticmethod
-    def is_valid_card_combination(cards):
+    def is_valid_card_combination(cards) -> bool:
         if len(cards) == 1:
             return True
 
@@ -122,7 +129,7 @@ class BigTwo:
         return BigTwo.is_straight(cards)
 
     @staticmethod
-    def is_straight(cards):
+    def is_straight(cards) -> bool:
         rank_order_map = BigTwo.rank_order()
         cards = sorted(cards, key=lambda c: rank_order_map[c.rank])
 
@@ -152,7 +159,7 @@ class BigTwo:
         return is_straight
 
     @staticmethod
-    def is_bigger(cards, current_combination):
+    def is_bigger(cards, current_combination) -> bool:
         if len(cards) is not len(current_combination):
             return False
 
@@ -261,23 +268,23 @@ class BigTwo:
 
         return BigTwo.STRAIGHT
 
-    def current_observation(self, player_number):
+    def current_observation(self, player_number) -> BigTwoPlayerObservation:
         num_card_per_player = []
         while True:
             index = player_number + 1;
             if index >= len(self.player_hands):
                 index = 0;
 
-            num_card_per_player.append(len(self.player_hands[index]))
+            num_card_per_player.append(len(self.player_hands[index][1]))
 
             if len(num_card_per_player) == len(self.player_hands) - 1:
                 break;
 
-        return {
-            "num_card_per_player": num_card_per_player,
-            "cards_played": self.state,
-            "your_hands": self.player_hands[player_number]
-        }
+        return BigTwoPlayerObservation(
+            num_card_per_player=num_card_per_player,
+            cards_played=self.state,
+            your_hands=self.player_hands[player_number][1]
+        )
 
     def remove_card_from_player_hand(self, cards, player_number: int):
         player_hand = self.player_hands[player_number]
@@ -290,9 +297,6 @@ class BigTwo:
         self.player_hands[player_number] = (player_hand[0], hand)
 
     def step(self, action):
-        if not BigTwo.is_valid_card_combination(action):
-            return self.current_observation(self.current_player), 13, False
-
         if len(action) == 0:
             # this mean player is skipping
             previous_player = self.current_player
@@ -301,6 +305,9 @@ class BigTwo:
                 self.current_player = 0
 
             return self.current_observation(previous_player), 0, False
+
+        if not BigTwo.is_valid_card_combination(action):
+            return self.current_observation(self.current_player), 13, False
 
         if len(self.state) == 0:
             # first turn of the game
