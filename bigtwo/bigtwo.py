@@ -11,10 +11,14 @@ def have_diamond_three(hand):
 
 
 class BigTwoPlayerObservation:
-    def __init__(self, num_card_per_player, cards_played, your_hands):
+    def __init__(self, num_card_per_player, cards_played, your_hands, last_player_played):
         self.num_card_per_player = num_card_per_player
         self.cards_played = cards_played
         self.your_hands = your_hands
+        self.last_player_played = last_player_played
+
+    def __str__(self):
+        return ' '.join(' '.join(str(y) for y in x) for x in self.cards_played)
 
 
 class BigTwo:
@@ -38,6 +42,7 @@ class BigTwo:
 
         self.player_hands = player_hands
         self.current_player = None;
+        self.player_last_played = None;
 
     @staticmethod
     def rank_order():
@@ -283,7 +288,8 @@ class BigTwo:
         return BigTwoPlayerObservation(
             num_card_per_player=num_card_per_player,
             cards_played=self.state,
-            your_hands=self.player_hands[player_number][1]
+            your_hands=self.player_hands[player_number][1],
+            last_player_played=self.player_last_played
         )
 
     def remove_card_from_player_hand(self, cards, player_number: int):
@@ -295,6 +301,18 @@ class BigTwo:
             hand.remove(card)
 
         self.player_hands[player_number] = (player_hand[0], hand)
+
+    def _apply_action(self, action):
+        self.state.append(action)
+        self.remove_card_from_player_hand(action, self.current_player)
+
+        previous_player = self.current_player
+        self.current_player += 1
+        if self.current_player > self.number_of_players() - 1:
+            self.current_player = 0
+        game_finished = len(self.player_hands[previous_player][1]) == 0
+        self.player_last_played = previous_player
+        return self.current_observation(previous_player), -1 * len(action), game_finished
 
     def step(self, action):
         if len(action) == 0:
@@ -309,17 +327,9 @@ class BigTwo:
         if not BigTwo.is_valid_card_combination(action):
             return self.current_observation(self.current_player), 13, False
 
-        if len(self.state) == 0:
+        if len(self.state) == 0 or self.player_last_played == self.current_player:
             # first turn of the game
-            self.state.append(action)
-            self.remove_card_from_player_hand(action, self.current_player)
-
-            previous_player = self.current_player
-            self.current_player += 1
-            if self.current_player > self.number_of_players() - 1:
-                self.current_player = 0
-
-            return self.current_observation(previous_player), -1 * len(action), False
+            return self._apply_action(action)
 
         # there are cards played already
         current_combination = self.state[len(self.state) - 1]
@@ -328,21 +338,11 @@ class BigTwo:
             # the cards that the player is played is not bigger than the existing combination so it's their turn again
             return self.current_observation(self.current_player), 13, False
 
-        self.state.append(action)
-        self.remove_card_from_player_hand(action, self.current_player)
-
-        previous_player = self.current_player
-        self.current_player += 1
-        if self.current_player > self.number_of_players() - 1:
-            self.current_player = 0
-
-        game_finished = len(self.player_hands[previous_player][1]) == 0
-
-        return self.current_observation(previous_player), -1 * len(action), game_finished
+        return self._apply_action(action)
 
     def display_all_player_hands(self):
         for idx, hand in enumerate(self.player_hands):
-            print(idx, hand)
+            print(idx, ' '.join(str(x) for x in hand[1]))
 
     def get_current_player(self):
         if self.current_player is None:

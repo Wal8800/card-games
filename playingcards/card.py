@@ -4,26 +4,26 @@ import itertools
 
 
 class Suit(Enum):
-    spades = 1
-    hearts = 2
-    clubs = 3
-    diamond = 4
+    spades = "♠"
+    hearts = "♥"
+    clubs = "♣"
+    diamond = "♦"
 
 
 class Rank(Enum):
-    ace = 1
-    king = 2
-    queen = 3
-    jack = 4
-    ten = 5
-    nine = 6
-    eight = 7
-    seven = 8
-    six = 9
-    five = 10
-    four = 11
-    three = 12
-    two = 13
+    ace = "A"
+    king = "K"
+    queen = "Q"
+    jack = "J"
+    ten = "10"
+    nine = "9"
+    eight = "8"
+    seven = "7"
+    six = "6"
+    five = "5"
+    four = "4"
+    three = "3"
+    two = "2"
 
 
 class Card:
@@ -32,7 +32,7 @@ class Card:
         self.rank = rank
 
     def __str__(self):
-        return self.suit.name + " " + self.rank.name
+        return self.suit.value + "" + self.rank.value
 
     def is_same_suit(self, card):
         return self.suit == card.suit
