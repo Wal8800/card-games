@@ -1,4 +1,4 @@
-from gamerunner import BigTwoBot
+from .big_two_bot import BigTwoBot
 
 
 class CommandLineBot(BigTwoBot):

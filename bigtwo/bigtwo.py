@@ -1,5 +1,6 @@
 from playingcards import Deck, Suit, Rank
 from collections import Counter
+from gym import spaces
 
 
 def have_diamond_three(hand):
@@ -11,11 +12,12 @@ def have_diamond_three(hand):
 
 
 class BigTwoPlayerObservation:
-    def __init__(self, num_card_per_player, cards_played, your_hands, last_player_played):
+    def __init__(self, num_card_per_player, cards_played, your_hands, last_player_played, player_number):
         self.num_card_per_player = num_card_per_player
         self.cards_played = cards_played
         self.your_hands = your_hands
         self.last_player_played = last_player_played
+        self.your_player_number = player_number
 
     def __str__(self):
         return ' '.join(' '.join(str(y) for y in x) for x in self.cards_played)
@@ -43,13 +45,24 @@ class BigTwo:
             raise ValueError("BigTwo can only be play with 4 players")
 
         # player_hands is a list of tuple (Player Object, List of Cards)
+        players = []
         player_hands = []
         for idx, player in enumerate(player_list):
-            player_hands.append((player, hands[idx]))
+            player_hands.append(hands[idx])
+            players.append(player)
 
         self.player_hands = player_hands
-        self.current_player = None;
-        self.player_last_played = None;
+        self.players = players
+        self.current_player = None
+        self.player_last_played = None
+
+        self.observation_space = spaces.Dict({
+            "num_card_per_player": spaces.Box(low=0, high=13, shape=(3,)),
+            "last_card_played": spaces.Discrete(52),
+            "your_hands": spaces.Box(low=-1, high=51, shape=(13,)),
+            "your_player_number": spaces.Discrete(4),
+            "last_player_played": spaces.Discrete(4)
+        })
 
     @staticmethod
     def rank_order():
@@ -280,7 +293,7 @@ class BigTwo:
             if index >= len(self.player_hands):
                 index = 0;
 
-            num_card_per_player.append(len(self.player_hands[index][1]))
+            num_card_per_player.append(len(self.player_hands[index]))
 
             if len(num_card_per_player) == len(self.player_hands) - 1:
                 break;
@@ -288,19 +301,20 @@ class BigTwo:
         return BigTwoPlayerObservation(
             num_card_per_player=num_card_per_player,
             cards_played=self.state,
-            your_hands=self.player_hands[player_number][1],
-            last_player_played=self.player_last_played
+            your_hands=self.player_hands[player_number],
+            last_player_played=self.player_last_played,
+            player_number=player_number
         )
 
     def remove_card_from_player_hand(self, cards, player_number: int):
         player_hand = self.player_hands[player_number]
 
-        hand = player_hand[1]
+        hand = player_hand
 
         for card in cards:
             hand.remove(card)
 
-        self.player_hands[player_number] = (player_hand[0], hand)
+        self.player_hands[player_number] = hand
 
     def _apply_action(self, action):
         self.state.append(action)
@@ -310,7 +324,7 @@ class BigTwo:
         self.current_player += 1
         if self.current_player > self.number_of_players() - 1:
             self.current_player = 0
-        game_finished = len(self.player_hands[previous_player][1]) == 0
+        game_finished = len(self.player_hands[previous_player]) == 0
         self.player_last_played = previous_player
         return self.current_observation(previous_player), -1 * len(action), game_finished
 
@@ -342,15 +356,15 @@ class BigTwo:
 
     def display_all_player_hands(self):
         for idx, hand in enumerate(self.player_hands):
-            print(idx, ' '.join(str(x) for x in hand[1]))
+            print(idx, ' '.join(str(x) for x in hand))
 
     def get_current_player(self):
         if self.current_player is None:
             for idx, player_hand in enumerate(self.player_hands):
-                if have_diamond_three(player_hand[1]):
+                if have_diamond_three(player_hand):
                     self.current_player = idx
-                    return player_hand[0], idx
+                    return self.players[idx], idx
 
             raise ValueError("One player should have Diamond three in their hand")
 
-        return self.player_hands[self.current_player][0], self.current_player
+        return self.players[self.current_player], self.current_player

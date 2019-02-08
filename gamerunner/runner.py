@@ -16,7 +16,7 @@ while True:
     current_player, current_player_number = big_two_game.get_current_player()
 
     obs = big_two_game.current_observation(current_player_number)
-    action = current_player.action(obs, obs.last_player_played == current_player_number)
+    action = current_player.action(obs)
     result_obs, reward, done = big_two_game.step(action)
     print("turn ", turn)
     print("current_player", current_player_number)
