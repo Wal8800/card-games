@@ -27,6 +27,29 @@ class Rank(Enum):
 
 
 class Card:
+    SUIT_NUMBER = {
+        Suit.spades: 0,
+        Suit.hearts: 1,
+        Suit.clubs: 2,
+        Suit.diamond: 3
+    }
+
+    RANK_NUMBER = {
+        Rank.ace: 0,
+        Rank.two: 1,
+        Rank.three: 2,
+        Rank.four: 3,
+        Rank.five: 4,
+        Rank.six: 5,
+        Rank.seven: 6,
+        Rank.eight: 7,
+        Rank.nine: 8,
+        Rank.ten: 9,
+        Rank.jack: 10,
+        Rank.queen: 11,
+        Rank.king: 12,
+    }
+
     def __init__(self, suit: Suit, rank: Rank):
         self.suit = suit
         self.rank = rank
@@ -34,11 +57,31 @@ class Card:
     def __str__(self):
         return self.suit.value + "" + self.rank.value
 
+    @staticmethod
+    def from_number(number: int):
+        if 0 <= number <= 51:
+            raise ValueError("Invalid card number, must be from 1 to 52")
+
+        rank = number % 13
+        suit = number // 13
+
+        inverse_suit_number = {f: i for i, f in enumerate(Card.SUIT_NUMBER)}
+        inverse_rank_number = {f: i for i, f in enumerate(Card.RANK_NUMBER)}
+
+        return Card(inverse_suit_number[suit], inverse_rank_number[rank])
+
     def is_same_suit(self, card):
         return self.suit == card.suit
 
     def is_same_rank(self, card):
         return self.rank == card.rank
+
+    def to_number(self):
+        """
+        Used to generated observation
+        :return: int
+        """
+        return (Card.SUIT_NUMBER[self.suit] * 13) + Card.RANK_NUMBER[self.rank]
 
 
 class Deck:
@@ -63,4 +106,3 @@ class Deck:
     def shuffle_and_split(self, n):
         self.shuffle_deck()
         return [self.cards[i::n] for i in range(n)]
-

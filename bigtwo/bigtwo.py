@@ -28,6 +28,13 @@ class BigTwo:
     FLUSH = 4
     STRAIGHT_FLUSH = 5
 
+    """
+    TODO
+     - can't skip once everyone else skipped
+     - first action must have diamond as one of the action
+     - need to return number observation.
+    """
+
     def __init__(self, player_list, deck: Deck):
         hands = deck.shuffle_and_split(self.number_of_players())
         self.state = []
@@ -84,13 +91,6 @@ class BigTwo:
     @staticmethod
     def number_of_players():
         return 4
-
-    def check_win_condition(self):
-        for player_hand in self.player_hands:
-            if len(player_hand[1]) == 0:
-                return True
-
-        return False
 
     @staticmethod
     def is_valid_card_combination(cards) -> bool:

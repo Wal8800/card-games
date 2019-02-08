@@ -1,4 +1,4 @@
-from gamerunner import Bot
+from gamerunner import RandomBot, CommandLineBot
 from playingcards import Deck
 from bigtwo import BigTwo
 
@@ -6,7 +6,7 @@ from bigtwo import BigTwo
 deck = Deck()
 player_list = []
 for i in range(BigTwo.number_of_players()):
-    player_list.append(Bot(str(i)))
+    player_list.append(RandomBot())
 
 big_two_game = BigTwo(player_list, deck)
 
