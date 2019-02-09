@@ -57,16 +57,21 @@ class Card:
     def __str__(self):
         return self.suit.value + "" + self.rank.value
 
+    def __eq__(self, other):
+        if isinstance(other, Card):
+            return self.suit == other.suit and self.rank == other.rank
+        return False
+
     @staticmethod
     def from_number(number: int):
-        if 0 <= number <= 51:
-            raise ValueError("Invalid card number, must be from 1 to 52")
+        if not 0 <= number <= 51:
+            raise ValueError("Invalid card number, must be from 0 to 51")
 
         rank = number % 13
         suit = number // 13
 
-        inverse_suit_number = {f: i for i, f in enumerate(Card.SUIT_NUMBER)}
-        inverse_rank_number = {f: i for i, f in enumerate(Card.RANK_NUMBER)}
+        inverse_suit_number = {v: k for k, v in Card.SUIT_NUMBER.items()}
+        inverse_rank_number = {v: k for k, v in Card.RANK_NUMBER.items()}
 
         return Card(inverse_suit_number[suit], inverse_rank_number[rank])
 

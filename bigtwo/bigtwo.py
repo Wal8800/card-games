@@ -1,6 +1,7 @@
-from playingcards import Deck, Suit, Rank
+from playingcards import Deck, Suit, Rank, Card
 from collections import Counter
 from gym import spaces
+import numpy as np
 
 
 def have_diamond_three(hand):
@@ -9,18 +10,6 @@ def have_diamond_three(hand):
             return True
 
     return False
-
-
-class BigTwoPlayerObservation:
-    def __init__(self, num_card_per_player, cards_played, your_hands, last_player_played, player_number):
-        self.num_card_per_player = num_card_per_player
-        self.cards_played = cards_played
-        self.your_hands = your_hands
-        self.last_player_played = last_player_played
-        self.your_player_number = player_number
-
-    def __str__(self):
-        return ' '.join(' '.join(str(y) for y in x) for x in self.cards_played)
 
 
 class BigTwo:
@@ -58,7 +47,7 @@ class BigTwo:
 
         self.observation_space = spaces.Dict({
             "num_card_per_player": spaces.Box(low=0, high=13, shape=(3,)),
-            "last_card_played": spaces.Discrete(52),
+            "last_cards_played": spaces.Box(low=-1, high=51, shape=(5,)),
             "your_hands": spaces.Box(low=-1, high=51, shape=(13,)),
             "your_player_number": spaces.Discrete(4),
             "last_player_played": spaces.Discrete(4)
@@ -286,7 +275,7 @@ class BigTwo:
 
         return BigTwo.STRAIGHT
 
-    def current_observation(self, player_number) -> BigTwoPlayerObservation:
+    def current_observation(self, player_number):
         num_card_per_player = []
         while True:
             index = player_number + 1;
@@ -298,13 +287,21 @@ class BigTwo:
             if len(num_card_per_player) == len(self.player_hands) - 1:
                 break;
 
-        return BigTwoPlayerObservation(
-            num_card_per_player=num_card_per_player,
-            cards_played=self.state,
-            your_hands=self.player_hands[player_number],
-            last_player_played=self.player_last_played,
-            player_number=player_number
-        )
+        hands_in_number = [card.to_number() for card in self.player_hands[player_number]]
+
+        last_cards_played = np.repeat(-1, 5)
+        if len(self.state) > 0:
+            cards = self.state[len(self.state)-1]
+            card_number = [card.to_number() for card in cards]
+            last_cards_played.put(range(len(cards)), card_number)
+
+        return {
+            "num_card_per_player": num_card_per_player,
+            "last_cards_played": last_cards_played,
+            "your_hands": hands_in_number,
+            "last_player_played": self.player_last_played,
+            "your_player_number": player_number
+        }
 
     def remove_card_from_player_hand(self, cards, player_number: int):
         player_hand = self.player_hands[player_number]
@@ -312,7 +309,10 @@ class BigTwo:
         hand = player_hand
 
         for card in cards:
-            hand.remove(card)
+            for card_in_hand in hand:
+                if card == card_in_hand:
+                    hand.remove(card_in_hand)
+                    break
 
         self.player_hands[player_number] = hand
 
@@ -337,6 +337,9 @@ class BigTwo:
                 self.current_player = 0
 
             return self.current_observation(previous_player), 0, False
+
+        # convert card number to card
+        action = [Card.from_number(x) for x in action]
 
         if not BigTwo.is_valid_card_combination(action):
             return self.current_observation(self.current_player), 13, False
