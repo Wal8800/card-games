@@ -29,7 +29,7 @@ while True:
     print('before player hand:' + display_cards_string(obs["your_hands"]))
     print('last_player_played: ', obs["last_player_played"])
     print('cards played: ' + display_cards_string(obs["last_cards_played"]))
-    print('action: ' + display_cards_string(action))
+    print('action: ' + str(action[1]))
     print('after player hand:' + display_cards_string(result_obs["your_hands"]))
     print("====")
     if done:

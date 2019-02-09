@@ -53,6 +53,13 @@ class BigTwo:
             "last_player_played": spaces.Discrete(4)
         })
 
+        self.action_space = spaces.Tuple((
+            # player number
+            spaces.Discrete(4),
+            # list of 1 and 0 indiciating which card to play, eg 1 at index 0 is to play Card at index 0
+            spaces.MultiBinary(13)
+        ))
+
     @staticmethod
     def rank_order():
         return {
@@ -326,7 +333,21 @@ class BigTwo:
         self.player_last_played = previous_player
         return self.current_observation(previous_player), -1 * len(action), game_finished
 
-    def step(self, action):
+    def convert_raw_action_cards(self, raw_action):
+        player_number = raw_action[0]
+        selected_card = raw_action[1]
+        player_hand = self.player_hands[player_number]
+
+        action = []
+        for idx, value in enumerate(selected_card):
+            if value == 1:
+                action.append(player_hand[idx])
+
+        return action
+
+    def step(self, raw_action):
+        action = self.convert_raw_action_cards(raw_action)
+
         if len(action) == 0:
             # this mean player is skipping
             previous_player = self.current_player
@@ -335,9 +356,6 @@ class BigTwo:
                 self.current_player = 0
 
             return self.current_observation(previous_player), 0, False
-
-        # convert card number to card
-        action = [Card.from_number(x) for x in action]
 
         if not BigTwo.is_valid_card_combination(action):
             return self.current_observation(self.current_player), 13, False
