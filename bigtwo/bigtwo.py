@@ -22,8 +22,6 @@ class BigTwo:
     """
     TODO
      - can't skip once everyone else skipped
-     - first action must have diamond as one of the action
-     - need to return number observation.
     """
 
     def __init__(self, player_list, deck: Deck):
@@ -50,7 +48,7 @@ class BigTwo:
             "last_cards_played": spaces.Box(low=-1, high=51, shape=(5,)),
             "your_hands": spaces.Box(low=-1, high=51, shape=(13,)),
             "your_player_number": spaces.Discrete(4),
-            "last_player_played": spaces.Discrete(4)
+            "last_player_played": spaces.Discrete(5)
         })
 
         self.action_space = spaces.Tuple((
@@ -316,7 +314,7 @@ class BigTwo:
             "num_card_per_player": num_card_per_player,
             "last_cards_played": last_cards_played,
             "your_hands": hands_in_number,
-            "last_player_played": self.player_last_played,
+            "last_player_played": self.player_last_played if self.player_last_played is not None else 5,
             "your_player_number": player_number
         }
 
@@ -345,10 +343,17 @@ class BigTwo:
 
         return action
 
+    def is_first_turn_of_the_game(self):
+        return len(self.state) == 0
+
     def step(self, raw_action):
         action = self.convert_raw_action_cards(raw_action)
 
         if len(action) == 0:
+            # can't skipp on the first turn of the game or when everyone else skipped already
+            if self.is_first_turn_of_the_game() or self.player_last_played == self.current_player:
+                return self.current_observation(self.current_player), 13, False
+
             # this mean player is skipping
             previous_player = self.current_player
             self.current_player += 1
@@ -360,8 +365,10 @@ class BigTwo:
         if not BigTwo.is_valid_card_combination(action):
             return self.current_observation(self.current_player), 13, False
 
-        if len(self.state) == 0 or self.player_last_played == self.current_player:
-            # first turn of the game
+        if self.is_first_turn_of_the_game() or self.player_last_played == self.current_player:
+            if self.is_first_turn_of_the_game() and not have_diamond_three(action):
+                # always need to play diamond three first
+                return self.current_observation(self.current_player), 13, False
             return self._apply_action(action)
 
         # there are cards played already
