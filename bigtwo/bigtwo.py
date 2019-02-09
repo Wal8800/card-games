@@ -275,6 +275,16 @@ class BigTwo:
 
         return BigTwo.STRAIGHT
 
+    @staticmethod
+    def remove_card_from_hand(cards, hand):
+        for card in cards:
+            for card_in_hand in hand:
+                if card == card_in_hand:
+                    hand.remove(card_in_hand)
+                    break
+
+        return hand
+
     def current_observation(self, player_number):
         num_card_per_player = []
         while True:
@@ -303,22 +313,10 @@ class BigTwo:
             "your_player_number": player_number
         }
 
-    def remove_card_from_player_hand(self, cards, player_number: int):
-        player_hand = self.player_hands[player_number]
-
-        hand = player_hand
-
-        for card in cards:
-            for card_in_hand in hand:
-                if card == card_in_hand:
-                    hand.remove(card_in_hand)
-                    break
-
-        self.player_hands[player_number] = hand
-
     def _apply_action(self, action):
         self.state.append(action)
-        self.remove_card_from_player_hand(action, self.current_player)
+        self.player_hands[self.current_player] = \
+            BigTwo.remove_card_from_hand(action, self.player_hands[self.current_player])
 
         previous_player = self.current_player
         self.current_player += 1

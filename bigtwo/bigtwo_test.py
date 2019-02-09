@@ -1,20 +1,9 @@
 import unittest
 from playingcards import Card, Suit, Rank, Deck
 from bigtwo import BigTwo
-from gamerunner import Bot
-import random
 
 
 class TestBigTwo(unittest.TestCase):
-
-    @staticmethod
-    def create_big_two_game() -> BigTwo:
-        deck = Deck()
-        player_list = []
-        for i in range(BigTwo.number_of_players()):
-            player_list.append(Bot(str(i)))
-
-        return BigTwo(player_list, deck)
 
     def test_is_bigger_single(self):
         spade_ace = [
@@ -252,61 +241,24 @@ class TestBigTwo(unittest.TestCase):
         self.assertTrue(BigTwo.is_bigger(four_of_a_kind, full_house), "Four of a kind bigger than Full house")
         self.assertTrue(BigTwo.is_bigger(straight_flush, four_of_a_kind), "Straight flush bigger than 4 of a kind")
 
-    def test_step_first_action(self):
-        big_two_game = TestBigTwo.create_big_two_game()
-        current_player, current_player_number = big_two_game.get_current_player()
-        obs = big_two_game.current_observation(current_player_number)
-        random_card = random.choice(obs.your_hands)
-        result_obs, reward, done = big_two_game.step([random_card])
+    def test_remove_card_from_hand(self):
+        cards = [
+            Card(Suit.diamond, Rank.king),
+            Card(Suit.diamond, Rank.three)
+        ]
 
-        self.assertFalse(done)
-        self.assertEqual(reward, -1)
+        hand = [
+            Card(Suit.hearts, Rank.king),
+            Card(Suit.diamond, Rank.king),
+            Card(Suit.diamond, Rank.three),
+            Card(Suit.spades, Rank.three)
+        ]
 
-        self.assertNotIn(random_card, result_obs.your_hands)
-        self.assertEqual(result_obs.num_card_per_player, [13, 13, 13])
-        self.assertEqual(result_obs.cards_played, [[random_card]])
+        result = BigTwo.remove_card_from_hand(cards, hand)
 
-        next_player = current_player_number + 1
-        if next_player > 3:
-            next_player = 0
-
-        self.assertEqual(big_two_game.current_player, next_player)
-
-    def test_step_skip_action(self):
-        big_two_game = TestBigTwo.create_big_two_game()
-
-        # first player plays a card first
-        current_player, current_player_number = big_two_game.get_current_player()
-        obs = big_two_game.current_observation(current_player_number)
-        random_card = random.choice(obs.your_hands)
-        _, reward, done = big_two_game.step([random_card])
-
-        self.assertFalse(done)
-        self.assertEqual(reward, -1)
-
-        # second player skip a turn
-        second_player, second_player_number = big_two_game.get_current_player()
-        second_player_obs = big_two_game.current_observation(second_player_number)
-        next_player = current_player_number + 1
-        if next_player > 3:
-            next_player = 0
-
-        self.assertEqual(second_player_number, next_player)
-
-        result_obs, reward, done = big_two_game.step([])
-        self.assertFalse(done)
-        self.assertEqual(reward, 0)
-
-        # asserting nothing changed since the player skipp the turn
-        self.assertEqual(second_player_obs.your_hands, result_obs.your_hands)
-        self.assertEqual(second_player_obs.cards_played, result_obs.cards_played)
-        self.assertEqual(second_player_obs.num_card_per_player, result_obs.num_card_per_player)
-
-        # asserting that it moved to another player turns
-        next_next_player = second_player_number + 1
-        if next_next_player > 3:
-            next_next_player = 0
-        self.assertEqual(big_two_game.current_player, next_next_player)
+        self.assertEqual(len(result), 2)
+        self.assertNotIn(Card(Suit.diamond, Rank.king), result)
+        self.assertNotIn(Card(Suit.diamond, Rank.three), result)
 
 
 if __name__ == '__main__':
