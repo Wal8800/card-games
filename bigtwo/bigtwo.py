@@ -329,7 +329,11 @@ class BigTwo:
             self.current_player = 0
         game_finished = len(self.player_hands[previous_player]) == 0
         self.player_last_played = previous_player
-        return self.current_observation(previous_player), -1 * len(action), game_finished
+
+        reward = 1 * len(action)
+        if game_finished:
+            reward = 100
+        return self.current_observation(previous_player), reward, game_finished
 
     def convert_raw_action_cards(self, raw_action):
         player_number = raw_action[0]
@@ -352,7 +356,7 @@ class BigTwo:
         if len(action) == 0:
             # can't skipp on the first turn of the game or when everyone else skipped already
             if self.is_first_turn_of_the_game() or self.player_last_played == self.current_player:
-                return self.current_observation(self.current_player), 13, False
+                return self.current_observation(self.current_player), -13, False
 
             # this mean player is skipping
             previous_player = self.current_player
@@ -363,12 +367,12 @@ class BigTwo:
             return self.current_observation(previous_player), 0, False
 
         if not BigTwo.is_valid_card_combination(action):
-            return self.current_observation(self.current_player), 13, False
+            return self.current_observation(self.current_player), -13, False
 
         if self.is_first_turn_of_the_game() or self.player_last_played == self.current_player:
             if self.is_first_turn_of_the_game() and not have_diamond_three(action):
                 # always need to play diamond three first
-                return self.current_observation(self.current_player), 13, False
+                return self.current_observation(self.current_player), -13, False
             return self._apply_action(action)
 
         # there are cards played already
@@ -376,7 +380,7 @@ class BigTwo:
 
         if not BigTwo.is_bigger(action, current_combination):
             # the cards that the player is played is not bigger than the existing combination so it's their turn again
-            return self.current_observation(self.current_player), 13, False
+            return self.current_observation(self.current_player), -13, False
 
         return self._apply_action(action)
 
