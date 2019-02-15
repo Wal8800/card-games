@@ -24,22 +24,9 @@ class BigTwo:
      - can't skip once everyone else skipped
     """
 
-    def __init__(self, player_list):
-        if len(player_list) != 4:
-            raise ValueError("BigTwo can only be play with 4 players")
-
-        # player list for the game
-        self.players = player_list
-
-        hands = Deck().shuffle_and_split(self.number_of_players())
+    def __init__(self):
+        self.player_hands = Deck().shuffle_and_split(self.number_of_players())
         self.state = []
-
-        # player_hands is a list of tuple (Player Object, List of Cards)
-        player_hands = []
-        for idx, player in enumerate(self.players):
-            player_hands.append(hands[idx])
-
-        self.player_hands = player_hands
         self.current_player = None
         self.player_last_played = None
 
@@ -47,7 +34,7 @@ class BigTwo:
             "num_card_per_player": spaces.Box(low=0, high=13, shape=(3,)),
             "last_cards_played": spaces.Box(low=-1, high=51, shape=(5,)),
             "your_hands": spaces.Box(low=-1, high=51, shape=(13,)),
-            "your_player_number": spaces.Discrete(4),
+            "current_player_number": spaces.Discrete(4),
             "last_player_played": spaces.Discrete(5)
         })
 
@@ -290,7 +277,7 @@ class BigTwo:
 
         return hand
 
-    def current_observation(self, player_number):
+    def _current_observation(self, player_number):
         num_card_per_player = []
         while True:
             index = player_number + 1;
@@ -315,7 +302,7 @@ class BigTwo:
             "last_cards_played": last_cards_played,
             "your_hands": hands_in_number,
             "last_player_played": self.player_last_played if self.player_last_played is not None else 5,
-            "your_player_number": player_number
+            "current_player_number": player_number
         }
 
     def _apply_action(self, action):
@@ -333,7 +320,7 @@ class BigTwo:
         reward = 1 * len(action)
         if game_finished:
             reward = 100
-        return self.current_observation(previous_player), reward, game_finished
+        return self._current_observation(previous_player), reward, game_finished
 
     def convert_raw_action_cards(self, raw_action):
         player_number = raw_action[0]
@@ -356,7 +343,7 @@ class BigTwo:
         if len(action) == 0:
             # can't skipp on the first turn of the game or when everyone else skipped already
             if self.is_first_turn_of_the_game() or self.player_last_played == self.current_player:
-                return self.current_observation(self.current_player), -13, False
+                return self._current_observation(self.current_player), -13, False
 
             # this mean player is skipping
             previous_player = self.current_player
@@ -364,15 +351,15 @@ class BigTwo:
             if self.current_player > self.number_of_players() - 1:
                 self.current_player = 0
 
-            return self.current_observation(previous_player), 0, False
+            return self._current_observation(previous_player), 0, False
 
         if not BigTwo.is_valid_card_combination(action):
-            return self.current_observation(self.current_player), -13, False
+            return self._current_observation(self.current_player), -13, False
 
         if self.is_first_turn_of_the_game() or self.player_last_played == self.current_player:
             if self.is_first_turn_of_the_game() and not have_diamond_three(action):
                 # always need to play diamond three first
-                return self.current_observation(self.current_player), -13, False
+                return self._current_observation(self.current_player), -13, False
             return self._apply_action(action)
 
         # there are cards played already
@@ -380,7 +367,7 @@ class BigTwo:
 
         if not BigTwo.is_bigger(action, current_combination):
             # the cards that the player is played is not bigger than the existing combination so it's their turn again
-            return self.current_observation(self.current_player), -13, False
+            return self._current_observation(self.current_player), -13, False
 
         return self._apply_action(action)
 
@@ -388,26 +375,24 @@ class BigTwo:
         for idx, hand in enumerate(self.player_hands):
             print(idx, ' '.join(str(x) for x in hand))
 
-    def get_current_player(self):
+    def _get_current_player(self):
         if self.current_player is None:
             for idx, player_hand in enumerate(self.player_hands):
                 if have_diamond_three(player_hand):
                     self.current_player = idx
-                    return self.players[idx], idx
+                    return idx
 
             raise ValueError("One player should have Diamond three in their hand")
 
-        return self.players[self.current_player], self.current_player
+        return self.current_player
 
     def reset(self):
-        hands = Deck().shuffle_and_split(self.number_of_players())
+        self.player_hands = Deck().shuffle_and_split(self.number_of_players())
         self.state = []
 
-        # player_hands is a list of tuple (Player Object, List of Cards)
-        player_hands = []
-        for idx, player in enumerate(self.players):
-            player_hands.append(hands[idx])
-
-        self.player_hands = player_hands
         self.current_player = None
         self.player_last_played = None
+
+        current_player_number = self._get_current_player()
+
+        return self._current_observation(current_player_number)
