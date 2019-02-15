@@ -24,22 +24,22 @@ class BigTwo:
      - can't skip once everyone else skipped
     """
 
-    def __init__(self, player_list, deck: Deck):
-        hands = deck.shuffle_and_split(self.number_of_players())
-        self.state = []
-
+    def __init__(self, player_list):
         if len(player_list) != 4:
             raise ValueError("BigTwo can only be play with 4 players")
 
+        # player list for the game
+        self.players = player_list
+
+        hands = Deck().shuffle_and_split(self.number_of_players())
+        self.state = []
+
         # player_hands is a list of tuple (Player Object, List of Cards)
-        players = []
         player_hands = []
-        for idx, player in enumerate(player_list):
+        for idx, player in enumerate(self.players):
             player_hands.append(hands[idx])
-            players.append(player)
 
         self.player_hands = player_hands
-        self.players = players
         self.current_player = None
         self.player_last_played = None
 
@@ -398,3 +398,16 @@ class BigTwo:
             raise ValueError("One player should have Diamond three in their hand")
 
         return self.players[self.current_player], self.current_player
+
+    def reset(self):
+        hands = Deck().shuffle_and_split(self.number_of_players())
+        self.state = []
+
+        # player_hands is a list of tuple (Player Object, List of Cards)
+        player_hands = []
+        for idx, player in enumerate(self.players):
+            player_hands.append(hands[idx])
+
+        self.player_hands = player_hands
+        self.current_player = None
+        self.player_last_played = None

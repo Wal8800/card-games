@@ -2,13 +2,11 @@ from gamerunner import RandomBot, CommandLineBot
 from playingcards import Deck, Card
 from bigtwo import BigTwo
 
-
-deck = Deck()
 player_list = []
 for i in range(BigTwo.number_of_players()):
     player_list.append(RandomBot())
 
-big_two_game = BigTwo(player_list, deck)
+big_two_game = BigTwo(player_list)
 
 turn = 0
 
