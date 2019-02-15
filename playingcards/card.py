@@ -75,6 +75,11 @@ class Card:
 
         return Card(inverse_suit_number[suit], inverse_rank_number[rank])
 
+    @staticmethod
+    def display_cards_string(cards):
+        filtered_list = [x for x in cards if x > -1]
+        return ' '.join(str(Card.from_number(x)) for x in filtered_list)
+
     def is_same_suit(self, card):
         return self.suit == card.suit
 

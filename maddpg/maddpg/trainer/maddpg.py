@@ -1,11 +1,11 @@
 import numpy as np
 import random
 import tensorflow as tf
-import maddpg.common.tf_util as U
+import maddpg.maddpg.common.tf_util as U
 
-from maddpg.common.distributions import make_pdtype
-from maddpg import AgentTrainer
-from maddpg.trainer.replay_buffer import ReplayBuffer
+from maddpg.maddpg.common.distributions import make_pdtype
+from maddpg.maddpg import AgentTrainer
+from maddpg.maddpg.trainer.replay_buffer import ReplayBuffer
 
 
 def discount_with_dones(rewards, dones, gamma):
@@ -108,6 +108,7 @@ def q_train(make_obs_ph_n, act_space_n, q_index, q_func, optimizer, grad_norm_cl
         target_q_values = U.function(obs_ph_n + act_ph_n, target_q)
 
         return train, update_target_q, {'q_values': q_values, 'target_q_values': target_q_values}
+
 
 class MADDPGAgentTrainer(AgentTrainer):
     def __init__(self, name, model, obs_shape_n, act_space_n, agent_index, args, local_q_func=False):

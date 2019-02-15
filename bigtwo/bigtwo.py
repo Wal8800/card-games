@@ -24,19 +24,24 @@ class BigTwo:
      - can't skip once everyone else skipped
     """
 
-    def __init__(self):
+    def __init__(self) -> object:
         self.player_hands = Deck().shuffle_and_split(self.number_of_players())
         self.state = []
         self.current_player = None
         self.player_last_played = None
 
-        self.observation_space = spaces.Dict({
-            "num_card_per_player": spaces.Box(low=0, high=13, shape=(3,)),
-            "last_cards_played": spaces.Box(low=-1, high=51, shape=(5,)),
-            "your_hands": spaces.Box(low=-1, high=51, shape=(13,)),
-            "current_player_number": spaces.Discrete(4),
-            "last_player_played": spaces.Discrete(5)
-        })
+        self.observation_space = spaces.Tuple((
+            # num_card_per_player
+            spaces.Box(low=0, high=13, shape=(3,)),
+            # last_cards_played
+            spaces.Box(low=-1, high=51, shape=(5,)),
+            # your_hands
+            spaces.Box(low=-1, high=51, shape=(13,)),
+            # current_player_number
+            spaces.Discrete(4),
+            # last_player_played
+            spaces.Discrete(5)
+        ))
 
         self.action_space = spaces.Tuple((
             # player number
@@ -297,13 +302,13 @@ class BigTwo:
             card_number = [card.to_number() for card in cards]
             last_cards_played.put(range(len(cards)), card_number)
 
-        return {
-            "num_card_per_player": num_card_per_player,
-            "last_cards_played": last_cards_played,
-            "your_hands": hands_in_number,
-            "last_player_played": self.player_last_played if self.player_last_played is not None else 5,
-            "current_player_number": player_number
-        }
+        return (
+            num_card_per_player,
+            last_cards_played,
+            hands_in_number,
+            player_number,
+            self.player_last_played if self.player_last_played is not None else 5
+        )
 
     def _apply_action(self, action):
         self.state.append(action)
