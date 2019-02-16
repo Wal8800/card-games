@@ -32,7 +32,7 @@ def p_train(make_obs_ph_n, act_space_n, p_index, p_func, q_func, optimizer, grad
 
         # set up placeholders
         obs_ph_n = make_obs_ph_n
-        act_ph_n = [act_pdtype_n[i].sample_placeholder([None], name="action"+str(i)) for i in range(len(act_space_n))]
+        act_ph_n = [act_pdtype_n[i].sample_placeholder([None], name="action"+str(i), override_dtype=tf.float32) for i in range(len(act_space_n))]
 
         p_input = obs_ph_n[p_index]
 
@@ -79,7 +79,7 @@ def q_train(make_obs_ph_n, act_space_n, q_index, q_func, optimizer, grad_norm_cl
 
         # set up placeholders
         obs_ph_n = make_obs_ph_n
-        act_ph_n = [act_pdtype_n[i].sample_placeholder([None], name="action"+str(i)) for i in range(len(act_space_n))]
+        act_ph_n = [act_pdtype_n[i].sample_placeholder([None], name="action"+str(i), override_dtype=tf.float32) for i in range(len(act_space_n))]
         target_ph = tf.placeholder(tf.float32, [None], name="target")
 
         q_input = tf.concat(obs_ph_n + act_ph_n, 1)

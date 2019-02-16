@@ -60,8 +60,27 @@ def get_trainers(env, num_players, obs_shape, arglist):
     model = mlp_model
     trainer = MADDPGAgentTrainer
     for i in range(num_players):
-        trainers.append(trainer("agent_%d" % i, model, obs_shape, env.action_space, i, arglist))
+        trainers.append(
+            trainer(
+                "agent_%d" % i,
+                model,
+                obs_shape,
+                [env.action_space for _ in range(4)],
+                i,
+                arglist
+            )
+        )
     return trainers
+
+
+def flatten_obs(obs):
+    flat_obs = []
+    for o in obs:
+        if isinstance(o, (list, np.ndarray)):
+            flat_obs.extend(o)
+        else:
+            flat_obs.append(o)
+    return np.array(flat_obs)
 
 
 def train(arglist):
@@ -71,8 +90,14 @@ def train(arglist):
         #     player_list.append(RandomBot())
 
         env = BigTwo()
-        obs_shape = env.observation_space.spaces
-        trainers = get_trainers(env, BigTwo.number_of_players(), obs_shape, arglist)
+
+        space_list = []
+        for sub_space in env.observation_space.spaces:
+            space_list.append(sub_space.shape if len(sub_space.shape) > 0 else (1,))
+
+        final_space = (np.sum(space_list),)
+        obs_shape_n = [final_space for _ in range(4)]
+        trainers = get_trainers(env, BigTwo.number_of_players(), obs_shape_n, arglist)
 
         U.initialize()
 
@@ -82,12 +107,13 @@ def train(arglist):
         final_ep_ag_rewards = []  # agent rewards for training curve
 
         saver = tf.train.Saver()
-        obs = env.reset()
+        env.reset()
         episode_step = 0
         train_step = 0
         t_start = time.time()
 
         while True:
+            obs = env.get_current_player_obs()
             print("turn ", episode_step)
             print("current_player", obs[3])
             print('before player hand:' + Card.display_cards_string(obs[2]))
@@ -95,22 +121,22 @@ def train(arglist):
             print('cards played: ' + Card.display_cards_string(obs[1]))
             current_agent = trainers[obs[3]]
             # action = player_list[obs["current_player_number"]].action(obs)
-            action = current_agent.action(obs)
+            flat_obs = flatten_obs(obs)
+            action = current_agent.action(flat_obs)
             new_obs, reward, done = env.step(action)
+            new_flat_obs = flatten_obs(new_obs)
             episode_step += 1
             terminal = (episode_step >= arglist.max_episode_len)
             print('action: ' + str(action[1]))
             print('after player hand:' + Card.display_cards_string(new_obs[2]))
             print("====")
 
-            current_agent.experience(obs, action, reward, new_obs, done, terminal)
-            obs = new_obs
-
+            current_agent.experience(flat_obs, action, reward, new_flat_obs, done, terminal)
             episode_rewards[-1] += reward
 
             if done or terminal:
                 env.display_all_player_hands()
-                obs = env.reset()
+                env.reset()
                 episode_step = 0
                 episode_rewards.append(0)
                 for a in agent_rewards:

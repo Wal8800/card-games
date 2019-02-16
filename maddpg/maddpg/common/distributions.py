@@ -2,7 +2,7 @@ import tensorflow as tf
 import numpy as np
 import maddpg.maddpg.common.tf_util as U
 from tensorflow.python.ops import math_ops
-from multiagent.multi_discrete import MultiDiscrete
+from multiagent.multiagent.multi_discrete import MultiDiscrete
 from tensorflow.python.ops import nn
 
 class Pd(object):
@@ -39,8 +39,11 @@ class PdType(object):
 
     def param_placeholder(self, prepend_shape, name=None):
         return tf.placeholder(dtype=tf.float32, shape=prepend_shape+self.param_shape(), name=name)
-    def sample_placeholder(self, prepend_shape, name=None):
-        return tf.placeholder(dtype=self.sample_dtype(), shape=prepend_shape+self.sample_shape(), name=name)
+    def sample_placeholder(self, prepend_shape, name=None, override_dtype=None):
+        if override_dtype is None:
+            return tf.placeholder(dtype=self.sample_dtype(), shape=prepend_shape+self.sample_shape(), name=name)
+        else:
+            return tf.placeholder(dtype=override_dtype, shape=prepend_shape + self.sample_shape(), name=name)
 
 class CategoricalPdType(PdType):
     def __init__(self, ncat):

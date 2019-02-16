@@ -29,6 +29,7 @@ class BigTwo:
         self.state = []
         self.current_player = None
         self.player_last_played = None
+        self.n = 4
 
         self.observation_space = spaces.Tuple((
             # num_card_per_player
@@ -43,12 +44,7 @@ class BigTwo:
             spaces.Discrete(5)
         ))
 
-        self.action_space = spaces.Tuple((
-            # player number
-            spaces.Discrete(4),
-            # list of 1 and 0 indiciating which card to play, eg 1 at index 0 is to play Card at index 0
-            spaces.MultiBinary(13)
-        ))
+        self.action_space = spaces.MultiBinary(13)
 
     @staticmethod
     def rank_order():
@@ -328,12 +324,11 @@ class BigTwo:
         return self._current_observation(previous_player), reward, game_finished
 
     def convert_raw_action_cards(self, raw_action):
-        player_number = raw_action[0]
-        selected_card = raw_action[1]
-        player_hand = self.player_hands[player_number]
+        # assume the action is always going to be from the current player
+        player_hand = self.player_hands[self.current_player]
 
         action = []
-        for idx, value in enumerate(selected_card):
+        for idx, value in enumerate(raw_action):
             if value == 1:
                 action.append(player_hand[idx])
 
@@ -398,6 +393,7 @@ class BigTwo:
         self.current_player = None
         self.player_last_played = None
 
-        current_player_number = self._get_current_player()
+        return self._current_observation(self._get_current_player())
 
-        return self._current_observation(current_player_number)
+    def get_current_player_obs(self):
+        return self._current_observation(self._get_current_player())
