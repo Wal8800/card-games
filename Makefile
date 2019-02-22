@@ -1,8 +1,8 @@
 run_random:
-	PYTHONPATH=~/workspace/card-games python3 gamerunner/random_runner.py
+	PYTHONPATH=$(pwd) python3 gamerunner/random_runner.py
 
 run_maddpg:
-	PYTHONPATH=~/workspace/card-games python3 gamerunner/maddpg_runner.py
+	PYTHONPATH=$(pwd) python3 gamerunner/maddpg_runner.py
 
 setup:
 	sudo apt-get update \
