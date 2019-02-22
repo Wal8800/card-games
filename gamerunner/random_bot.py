@@ -10,7 +10,8 @@ class RandomBot(BigTwoBot):
         if random.randint(0, 9) < 3 and is_last_player:
             return selected_cards
 
-        random_index = random.choice(range(len(observation[2])))
+        filter_hand = [x for x in observation[2] if not x == -1]
+        random_index = random.choice(range(len(filter_hand)))
         selected_cards[random_index] = 1
         return selected_cards
 

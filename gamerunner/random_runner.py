@@ -23,7 +23,7 @@ def train():
         action = player_list[obs[3]].action(obs)
         new_obs, reward, done = env.step(action)
         episode_step += 1
-        print('action: ' + str(action[1]))
+        print('action: ' + str(action))
         print('after player hand:' + Card.display_cards_string(new_obs[2]))
         print("====")
 

@@ -1,6 +1,4 @@
-from gamerunner import RandomBot, CommandLineBot
-from playingcards import Deck, Card
-from bigtwo import BigTwo
+from bigtwo import BigTwo, BigTwoRealTime
 import time
 import tensorflow as tf
 import argparse
@@ -85,11 +83,7 @@ def flatten_obs(obs):
 
 def train(arglist):
     with U.single_threaded_session():
-        # player_list = []
-        # for i in range(BigTwo.number_of_players()):
-        #     player_list.append(RandomBot())
-
-        env = BigTwo()
+        env = BigTwoRealTime()
 
         space_list = []
         for sub_space in env.observation_space.spaces:
@@ -105,42 +99,60 @@ def train(arglist):
         agent_rewards = [[0.0] for _ in range(env.n)]  # individual agent reward
         final_ep_rewards = []  # sum of rewards for training curve
         final_ep_ag_rewards = []  # agent rewards for training curve
-
+        agent_info = [[[]]]  # placeholder for benchmarking info
         saver = tf.train.Saver()
-        env.reset()
+        obs_n = env.reset()
         episode_step = 0
         train_step = 0
         t_start = time.time()
 
         while True:
-            obs = env.get_current_player_obs()
-            print("turn ", episode_step)
-            print("current_player", obs[3])
-            print('before player hand:' + Card.display_cards_string(obs[2]))
-            print('last_player_played: ', obs[4])
-            print('cards played: ' + Card.display_cards_string(obs[1]))
-            current_agent = trainers[obs[3]]
-            # action = player_list[obs["current_player_number"]].action(obs)
-            flat_obs = flatten_obs(obs)
-            action = current_agent.action(flat_obs)
-            new_obs, reward, done = env.step(action)
-            new_flat_obs = flatten_obs(new_obs)
-            episode_step += 1
-            terminal = (episode_step >= arglist.max_episode_len)
-            print('action: ' + str(action[1]))
-            print('after player hand:' + Card.display_cards_string(new_obs[2]))
-            print("====")
+            flat_obs_n = [flatten_obs(obs) for obs in obs_n]
+            action_n = [agent.action(obs) for agent, obs in zip(trainers, flat_obs_n)]
+            new_obs_n, rew_n, done_n = env.step(action_n)
+            new_flat_obs_n = [flatten_obs(obs) for obs in new_obs_n]
 
-            current_agent.experience(flat_obs, action, reward, new_flat_obs, done, terminal)
-            episode_rewards[-1] += reward
+            # print("turn ", episode_step)
+            # print("current_player", obs[3])
+            # print('before player hand:' + Card.display_cards_string(obs[2]))
+            # print('last_player_played: ', obs[4])
+            # print('cards played: ' + Card.display_cards_string(obs[1]))
+            # print('action: ' + str(action[1]))
+            # print('after player hand:' + Card.display_cards_string(new_obs[2]))
+            # print("====")
+
+            episode_step += 1
+            done = all(done_n)
+            terminal = (episode_step >= arglist.max_episode_len)
+
+            for i, agent in enumerate(trainers):
+                agent.experience(flat_obs_n[i], action_n[i], rew_n[i], new_flat_obs_n[i], done_n[i], terminal)
+            obs_n = new_obs_n
+
+            for i, rew in enumerate(rew_n):
+                episode_rewards[-1] += rew
+                agent_rewards[i][-1] += rew
 
             if done or terminal:
-                env.display_all_player_hands()
+                # env.display_all_player_hands()
                 env.reset()
                 episode_step = 0
                 episode_rewards.append(0)
                 for a in agent_rewards:
                     a.append(0)
+                agent_info.append([[]])
+
+            # for benchmarking learned policies
+            # if arglist.benchmark:
+            #     for i, info in enumerate(info_n):
+            #         agent_info[-1][i].append(info_n['n'])
+            #     if train_step > arglist.benchmark_iters and (done or terminal):
+            #         file_name = arglist.benchmark_dir + arglist.exp_name + '.pkl'
+            #         print('Finished benchmarking, now saving...')
+            #         with open(file_name, 'wb') as fp:
+            #             pickle.dump(agent_info[:-1], fp)
+            #         break
+            #     continue
 
             # increment global step counter
             train_step += 1
