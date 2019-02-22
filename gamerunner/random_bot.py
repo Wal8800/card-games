@@ -1,5 +1,5 @@
 import random
-from .big_two_bot import BigTwoBot
+from big_two_bot import BigTwoBot
 import numpy as np
 
 

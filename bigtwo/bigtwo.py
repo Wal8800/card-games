@@ -1,4 +1,4 @@
-from playingcards import Deck, Suit, Rank, Card
+from playingcards.card import Deck, Suit, Rank
 from collections import Counter
 from gym import spaces
 import numpy as np

@@ -1,5 +1,5 @@
-from gamerunner import RandomBot, CommandLineBot
-from playingcards import Deck, Card
+from random_bot import RandomBot
+from playingcards.card import Card
 from bigtwo import BigTwo
 
 
