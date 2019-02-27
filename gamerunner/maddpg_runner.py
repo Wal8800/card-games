@@ -82,7 +82,7 @@ def flatten_obs(obs):
 
 
 def train(arglist):
-    with U.single_threaded_session():
+    with U.make_session(3):
         env = BigTwoRealTime()
 
         space_list = []

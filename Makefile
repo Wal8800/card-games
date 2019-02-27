@@ -7,5 +7,5 @@ run_maddpg:
 setup:
 	sudo apt-get update \
 	sudo apt install python3 \
-	sudo apt install python-pip \
-	pip install -r requirement.txt
+	sudo apt install python3-pip \
+	pip3 install -r requirement.txt

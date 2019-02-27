@@ -352,7 +352,7 @@ class BigTwo:
         for idx, value in enumerate(raw_action):
             if value == 1 and idx > len(self.player_hands[self.current_player]):
                 # can't pick a card that doesn't exists
-                return self._current_observation(self.current_player), -1, False
+                return self._current_observation(self.current_player), -13, False
 
         action = self.convert_raw_action_cards(raw_action)
 
@@ -370,7 +370,13 @@ class BigTwo:
             return self._current_observation(previous_player), 0, False
 
         if not BigTwo.is_valid_card_combination(action):
-            return self._current_observation(self.current_player), -1, False
+            if len(action) > 5:
+                reward = (13 - len(action)) * -1
+            elif len(action) == 3 or len(action) == 4:
+                reward = -2
+            else:
+                reward = -1
+            return self._current_observation(self.current_player), reward, False
 
         if self.is_first_turn_of_the_game() or self.player_last_played == self.current_player:
             if self.is_first_turn_of_the_game() and not have_diamond_three(action):
