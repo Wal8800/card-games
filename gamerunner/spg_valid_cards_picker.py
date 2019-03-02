@@ -2,7 +2,6 @@ import tensorflow as tf
 import tensorflow_probability as tfp
 import numpy as np
 from bigtwo.valid_cards_game import ValidCardGame
-from playingcards.card import Card
 
 
 def mlp(x, sizes, activation=tf.tanh, output_activation=None):
@@ -40,7 +39,7 @@ actions = tfp.distributions.Bernoulli(logits=logits).sample()
 # make loss function whose gradient, for the right data, is policy gradient
 weights_ph = tf.placeholder(shape=(None,), dtype=tf.float32, name="weights_ph")
 act_ph = tf.placeholder(shape=(None, n_acts), dtype=tf.float32, name="act_ph")
-log_probs = tf.reduce_sum(act_ph * tf.nn.log_softmax(logits), axis=1)
+log_probs = tf.reduce_sum(act_ph * tf.log_sigmoid(logits), axis=1)
 loss = -tf.reduce_mean(weights_ph * log_probs)
 
 # make train_op
