@@ -1,6 +1,8 @@
 import random
-from big_two_bot import BigTwoBot
+
 import numpy as np
+
+from big_two_bot import BigTwoBot
 
 
 class RandomBot(BigTwoBot):
@@ -14,4 +16,3 @@ class RandomBot(BigTwoBot):
         random_index = random.choice(range(len(filter_hand)))
         selected_cards[random_index] = 1
         return selected_cards
-

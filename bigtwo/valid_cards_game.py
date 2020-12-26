@@ -1,9 +1,10 @@
 import numpy as np
-from playingcards.card import Card
+from playingcards.card import Card, Suit, Rank
 from bigtwo import BigTwo
 from gym import spaces
 import random
 from sklearn.preprocessing import OneHotEncoder
+from collections import Counter
 
 suit_encoder = OneHotEncoder(sparse=False, categories='auto')
 temp = np.array(range(4)).reshape(4, 1)
@@ -100,11 +101,14 @@ class ValidCardGame:
 
 class ValidCardGameAlt:
     def __init__(self):
-        self.current_hand = None
-        # 13 cards * 4 suit * 13 type of cards
-        self.observation_space = spaces.Box(low=0, high=12, shape=(221,), dtype=np.int32)
+        obs_shape = self.reset()
+        # 13 cards * 4 suit + 13 * 13 type of cards + 13 + 4 (Count of each rank and suit)
+        self.observation_space = spaces.Box(low=min(obs_shape), high=12, shape=(len(obs_shape),), dtype=np.int32)
         self.action_space = spaces.MultiBinary(13)
+        self.reward_range = (0, 25)
+        self.metadata = None
         self.past_result = []
+        self.spec = None
 
     def step(self, action):
         hand = [Card.from_number(x) for x in self.current_hand]
@@ -116,15 +120,42 @@ class ValidCardGameAlt:
         reward = len(cards) * len(cards) if valid_card and len(cards) > 1 else 0
 
         self.past_result.append((self.current_hand, cards, reward))
+        return self._create_mapping_obs(), reward, reward <= 0, {}
 
+    def reset(self):
+        self.past_result = []
+
+        return self._create_mapping_obs()
+
+    def _create_obs(self):
         self.current_hand = random_hand()
         self.current_hand.sort()
         obs = to_one_hot_encoding(self.current_hand)
-        return obs, reward, reward <= 0, {}
 
-    def reset(self):
+        rank_counts = Counter([Card.from_number(card_number).rank for card_number in self.current_hand])
+        suit_counts = Counter([Card.from_number(card_number).suit for card_number in self.current_hand])
+
+        total_rank_counts = [rank_counts[rank] if rank in rank_counts else 0 for rank in Rank]
+        total_suit_counts = [suit_counts[suit] if suit in suit_counts else 0 for suit in Suit]
+
+        return np.concatenate([obs, total_rank_counts, total_suit_counts])
+
+    def _create_mapping_obs(self):
         self.current_hand = random_hand()
         self.current_hand.sort()
-        self.past_result = []
 
-        return to_one_hot_encoding(self.current_hand)
+        rank_mapping = [[1 if Card.from_number(card_number).rank == rank else 0 for card_number in self.current_hand]
+                        for rank in Rank]
+        suit_mapping = [[1 if Card.from_number(card_number).suit == suit else 0 for card_number in self.current_hand]
+                        for suit in Suit]
+
+        return np.concatenate([rank_mapping, suit_mapping]).flatten()
+
+    def current_hand_card(self):
+        return [Card.from_number(card_number) for card_number in self.current_hand]
+
+
+if __name__ == '__main__':
+    game = ValidCardGameAlt()
+    obs = game.reset()
+    print(obs)
