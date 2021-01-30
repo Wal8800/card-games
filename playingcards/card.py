@@ -1,6 +1,6 @@
+import itertools
 from enum import Enum
 from random import shuffle
-import itertools
 
 
 class Suit(Enum):
@@ -80,10 +80,10 @@ class Card:
         filtered_list = [x for x in cards if x > -1]
         return ' '.join(str(Card.from_number(x)) for x in filtered_list)
 
-    def is_same_suit(self, card):
+    def is_same_suit(self, card) -> bool:
         return self.suit == card.suit
 
-    def is_same_rank(self, card):
+    def is_same_rank(self, card) -> bool:
         return self.rank == card.rank
 
     def to_number(self):
@@ -113,6 +113,6 @@ class Deck:
     def shuffle_deck(self):
         shuffle(self.cards)
 
-    def shuffle_and_split(self, n):
+    def shuffle_and_split(self, n: int) -> list[list[Card]]:
         self.shuffle_deck()
         return [self.cards[i::n] for i in range(n)]

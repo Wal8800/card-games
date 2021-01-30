@@ -1,7 +1,9 @@
-from playingcards.card import Deck, Suit, Rank
 from collections import Counter
-from gym import spaces
+
 import numpy as np
+from gym import spaces
+
+from playingcards.card import Card, Deck, Suit, Rank
 
 
 def have_diamond_three(hand):
@@ -52,7 +54,7 @@ class BigTwo:
         self.action_space = spaces.MultiBinary(13)
 
     @staticmethod
-    def rank_order():
+    def rank_order() -> dict[Rank, int]:
         return {
             Rank.three: 1,
             Rank.four: 2,
@@ -70,7 +72,7 @@ class BigTwo:
         }
 
     @staticmethod
-    def suit_order():
+    def suit_order() -> dict[Suit, int]:
         return {
             Suit.diamond: 1,
             Suit.clubs: 2,
@@ -93,7 +95,7 @@ class BigTwo:
         return 4
 
     @staticmethod
-    def is_valid_card_combination(cards) -> bool:
+    def is_valid_card_combination(cards: list[Card]) -> bool:
         if len(cards) == 1:
             return True
 
@@ -112,29 +114,28 @@ class BigTwo:
         """
         # checking if it's flush
         is_flush = True
-        card_rank_map = {
+        card_rank_count = {
             cards[0].rank: 1
         }
         for x in range(1, 5):
             if not cards[x - 1].is_same_suit(cards[x]):
                 is_flush = False
-
-            if cards[x].rank in card_rank_map:
-                current_count = card_rank_map[cards[x].rank]
-                card_rank_map[cards[x].rank] = current_count + 1
-            else:
-                card_rank_map[cards[x].rank] = 1
+            card_rank_count[cards[x].rank] = card_rank_count.get(cards[x].rank, 0) + 1
 
         if is_flush:
             return True
 
-        if len(card_rank_map) == 2:
+        if len(card_rank_count) == 2:
             return True
+
+        # There isn't a valid combination with 3 or 4 ranks in it.
+        if len(card_rank_count) == 3 or len(card_rank_count) == 4:
+            return False
 
         return BigTwo.is_straight(cards)
 
     @staticmethod
-    def is_straight(cards) -> bool:
+    def is_straight(cards: list[Card]) -> bool:
         rank_order_map = BigTwo.rank_order()
         cards = sorted(cards, key=lambda c: rank_order_map[c.rank])
 
@@ -144,7 +145,6 @@ class BigTwo:
         3 4 5 ace two
         3 4 5 6 two
         """
-        is_straight = True
         for x in range(1, 5):
             card_one = cards[x - 1]
             card_two = cards[x]
@@ -158,17 +158,16 @@ class BigTwo:
                 continue
 
             if card_one_order + 1 != card_two_order:
-                is_straight = False
-                break
+                return False
 
-        return is_straight
+        return True
 
     @staticmethod
-    def is_bigger(cards, current_combination) -> bool:
+    def is_bigger(cards: list[Card], current_combination: list[Card]) -> bool:
         if len(cards) is not len(current_combination):
             return False
 
-        if len(cards) is not 1 and len(cards) is not 2 and len(cards) is not 5:
+        if len(cards) not in [1, 2, 5]:
             raise ValueError("Number of cards is incorrect")
 
         rank_order = BigTwo.rank_order()
@@ -224,7 +223,7 @@ class BigTwo:
         rank_one_list = [card.rank for card in cards]
         rank_two_list = [card.rank for card in current_combination]
 
-        if len(Counter(rank_one_list).values()) is not 2:
+        if len(Counter(rank_one_list).values()) != 2:
             raise ValueError("Expect only two different rank ie Full House or Four of a kind")
 
         # most_common return a list of tuples
@@ -233,32 +232,23 @@ class BigTwo:
         return rank_order[common_one_rank] > rank_order[common_two_rank]
 
     @staticmethod
-    def get_five_card_type(cards):
+    def get_five_card_type(cards: list[Card]):
         if len(cards) != 5:
             raise ValueError("Need 5 cards to determine what type")
 
-        # Assume valid combination
-
         is_same_suit = True
-        card_rank_map = {
-            cards[0].rank: 1
-        }
+        card_rank_count = {}
         current_suit = cards[0].suit
 
-        for i in range(1, 5):
-            current_card = cards[i]
-            if current_card.rank in card_rank_map:
-                card_rank_map[current_card.rank] = card_rank_map[current_card.rank] + 1
-            else:
-                card_rank_map[current_card.rank] = 1
-
-            if current_card.suit is not current_suit:
+        for card in cards:
+            if card.suit is not current_suit:
                 is_same_suit = False
+            card_rank_count[card.rank] = card_rank_count.get(card.rank, 0) + 1
 
-        if len(card_rank_map) == 2:
-            rank = next(iter(card_rank_map))
+        if len(card_rank_count) == 2:
+            rank = next(iter(card_rank_count))
 
-            count = card_rank_map[rank]
+            count = card_rank_count[rank]
             if count == 1 or count == 4:
                 return BigTwo.FOUR_OF_A_KIND
 
@@ -271,7 +261,10 @@ class BigTwo:
         if is_same_suit:
             return BigTwo.FLUSH
 
-        return BigTwo.STRAIGHT
+        if is_straight:
+            return BigTwo.STRAIGHT
+
+        raise ValueError("invalid card combinations")
 
     @staticmethod
     def remove_card_from_hand(cards, hand):
@@ -283,28 +276,28 @@ class BigTwo:
 
         return hand
 
-    def _current_observation(self, player_number):
+    def _current_observation(self, player_number: int) -> tuple[list[int], np.ndarray, list[int], int, int]:
         num_card_per_player = []
         while True:
-            index = player_number + 1;
+            index = player_number + 1
             if index >= len(self.player_hands):
-                index = 0;
+                index = 0
 
             num_card_per_player.append(len(self.player_hands[index]))
 
             if len(num_card_per_player) == len(self.player_hands) - 1:
-                break;
+                break
 
         hands_in_number = [card.to_number() for card in self.player_hands[player_number]]
 
         if len(hands_in_number) < 13:
             # if there is less than 13 cards, make the array up to 13 long by filling up with -1
-            padding = [-1 for _ in range(13-len(hands_in_number))]
+            padding = [-1 for _ in range(13 - len(hands_in_number))]
             hands_in_number.extend(padding)
 
         last_cards_played = np.repeat(-1, 5)
         if len(self.state) > 0:
-            cards = self.state[len(self.state)-1]
+            cards = self.state[len(self.state) - 1]
             card_number = [card.to_number() for card in cards]
             last_cards_played.put(range(len(cards)), card_number)
 
@@ -318,17 +311,20 @@ class BigTwo:
 
     def _apply_action(self, action):
         self.state.append(action)
-        self.player_hands[self.current_player] = \
-            BigTwo.remove_card_from_hand(action, self.player_hands[self.current_player])
+
+        self.player_hands[self.current_player] = BigTwo.remove_card_from_hand(
+            action,
+            self.player_hands[self.current_player]
+        )
 
         previous_player = self.current_player
         self.current_player += 1
         if self.current_player > self.number_of_players() - 1:
             self.current_player = 0
-        game_finished = len(self.player_hands[previous_player]) == 0
         self.player_last_played = previous_player
 
         reward = 1 * len(action)
+        game_finished = len(self.player_hands[previous_player]) == 0
         if game_finished:
             reward = 100
         return self._current_observation(previous_player), reward, game_finished
@@ -357,7 +353,7 @@ class BigTwo:
         action = self.convert_raw_action_cards(raw_action)
 
         if len(action) == 0:
-            # can't skipp on the first turn of the game or when everyone else skipped already
+            # can't skip on the first turn of the game or when everyone else skipped already
             if self.is_first_turn_of_the_game() or self.player_last_played == self.current_player:
                 return self._current_observation(self.current_player), -1, False
 

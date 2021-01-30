@@ -1,6 +1,7 @@
 import unittest
-from playingcards import Card, Suit, Rank, Deck
+
 from bigtwo import BigTwo
+from playingcards.card import Card, Suit, Rank
 
 
 class TestBigTwo(unittest.TestCase):
@@ -145,7 +146,8 @@ class TestBigTwo(unittest.TestCase):
             Card(Suit.diamond, Rank.king)
         ]
 
-        self.assertTrue(BigTwo.is_bigger(ten_full_house, six_full_house), "Full house ten is bigger than Full house six")
+        self.assertTrue(BigTwo.is_bigger(ten_full_house, six_full_house),
+                        "Full house ten is bigger than Full house six")
 
     def test_is_bigger_four_of_a_kind(self):
         jack_four_of_a_kind = [
@@ -164,7 +166,8 @@ class TestBigTwo(unittest.TestCase):
             Card(Suit.diamond, Rank.four)
         ]
 
-        self.assertTrue(BigTwo.is_bigger(jack_four_of_a_kind, nine_four_of_a_kind), "Jack 4 of a kind is bigger than Nine 4 of a kind")
+        self.assertTrue(BigTwo.is_bigger(jack_four_of_a_kind, nine_four_of_a_kind),
+                        "Jack 4 of a kind is bigger than Nine 4 of a kind")
 
     def test_is_bigger_straight_flush(self):
         spades_straight_flush = [
@@ -183,7 +186,8 @@ class TestBigTwo(unittest.TestCase):
             Card(Suit.hearts, Rank.king)
         ]
 
-        self.assertTrue(BigTwo.is_bigger(spades_straight_flush, heart_straight_flush), "Spades straight flush is bigger than heart straight flush")
+        self.assertTrue(BigTwo.is_bigger(spades_straight_flush, heart_straight_flush),
+                        "Spades straight flush is bigger than heart straight flush")
 
         spades_two_straight_flush = [
             Card(Suit.spades, Rank.three),
@@ -259,6 +263,64 @@ class TestBigTwo(unittest.TestCase):
         self.assertEqual(len(result), 2)
         self.assertNotIn(Card(Suit.diamond, Rank.king), result)
         self.assertNotIn(Card(Suit.diamond, Rank.three), result)
+
+    def test_get_five_card_type(self):
+        straight = [
+            Card(Suit.hearts, Rank.seven),
+            Card(Suit.clubs, Rank.four),
+            Card(Suit.spades, Rank.five),
+            Card(Suit.diamond, Rank.eight),
+            Card(Suit.diamond, Rank.six)
+        ]
+
+        flush = [
+            Card(Suit.hearts, Rank.ace),
+            Card(Suit.hearts, Rank.six),
+            Card(Suit.hearts, Rank.ten),
+            Card(Suit.hearts, Rank.three),
+            Card(Suit.hearts, Rank.nine)
+        ]
+
+        full_house = [
+            Card(Suit.spades, Rank.ten),
+            Card(Suit.hearts, Rank.ten),
+            Card(Suit.clubs, Rank.ten),
+            Card(Suit.spades, Rank.five),
+            Card(Suit.diamond, Rank.five)
+        ]
+
+        four_of_a_kind = [
+            Card(Suit.spades, Rank.nine),
+            Card(Suit.hearts, Rank.nine),
+            Card(Suit.clubs, Rank.nine),
+            Card(Suit.diamond, Rank.nine),
+            Card(Suit.diamond, Rank.four)
+        ]
+
+        straight_flush = [
+            Card(Suit.spades, Rank.ten),
+            Card(Suit.spades, Rank.ace),
+            Card(Suit.spades, Rank.jack),
+            Card(Suit.spades, Rank.queen),
+            Card(Suit.spades, Rank.king)
+        ]
+
+        self.assertEqual(BigTwo.get_five_card_type(straight), BigTwo.STRAIGHT)
+        self.assertEqual(BigTwo.get_five_card_type(flush), BigTwo.FLUSH)
+        self.assertEqual(BigTwo.get_five_card_type(four_of_a_kind), BigTwo.FOUR_OF_A_KIND)
+        self.assertEqual(BigTwo.get_five_card_type(full_house), BigTwo.FULL_HOUSE)
+        self.assertEqual(BigTwo.get_five_card_type(straight_flush), BigTwo.STRAIGHT_FLUSH)
+
+    def test_get_five_card_type(self):
+        hand = [
+            Card(Suit.hearts, Rank.king),
+            Card(Suit.diamond, Rank.king),
+            Card(Suit.diamond, Rank.three),
+            Card(Suit.spades, Rank.three),
+            Card(Suit.spades, Rank.two)
+        ]
+
+        self.assertRaises(ValueError, BigTwo.get_five_card_type, hand)
 
 
 if __name__ == '__main__':

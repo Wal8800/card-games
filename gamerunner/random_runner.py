@@ -1,6 +1,6 @@
-from random_bot import RandomBot
-from playingcards.card import Card
 from bigtwo import BigTwo
+from playingcards.card import Card
+from random_bot import RandomBot
 
 
 def train():
@@ -16,7 +16,7 @@ def train():
         obs = env.get_current_player_obs()
         print("turn ", episode_step)
         print("current_player", obs[3])
-        print('before player hand:' + Card.display_cards_string(obs[2]))
+        print('before player hand: ' + Card.display_cards_string(obs[2]))
         print('last_player_played: ', obs[4])
         print('cards played: ' + Card.display_cards_string(obs[1]))
 
