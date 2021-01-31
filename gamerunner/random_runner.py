@@ -1,5 +1,4 @@
 from bigtwo import BigTwo
-from playingcards.card import Card
 from random_bot import RandomBot
 
 
@@ -18,7 +17,7 @@ def train():
         print("current_player", obs.current_player)
         print(f"before player hand: {obs.your_hands}")
         print('last_player_played: ', obs.last_player_played)
-        print('cards played: ' + Card.display_cards_string(obs.last_cards_played))
+        print(f"cards played: {obs.last_cards_played}")
 
         action = player_list[obs.current_player].action(obs)
         new_obs, reward, done = env.step(action)
