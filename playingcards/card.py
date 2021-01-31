@@ -54,7 +54,7 @@ class Card:
         self.suit = suit
         self.rank = rank
 
-    def __str__(self):
+    def __repr__(self):
         return self.suit.value + "" + self.rank.value
 
     def __eq__(self, other):

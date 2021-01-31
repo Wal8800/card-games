@@ -311,7 +311,7 @@ class TestBigTwo(unittest.TestCase):
         self.assertEqual(BigTwo.get_five_card_type(full_house), BigTwo.FULL_HOUSE)
         self.assertEqual(BigTwo.get_five_card_type(straight_flush), BigTwo.STRAIGHT_FLUSH)
 
-    def test_get_five_card_type(self):
+    def test_get_five_card_type_err(self):
         hand = [
             Card(Suit.hearts, Rank.king),
             Card(Suit.diamond, Rank.king),
@@ -321,6 +321,104 @@ class TestBigTwo(unittest.TestCase):
         ]
 
         self.assertRaises(ValueError, BigTwo.get_five_card_type, hand)
+
+    def test_reset_obs(self):
+        env = BigTwo()
+
+        obs = env.reset()
+
+        self.assertEqual(len(obs.your_hands), 13)
+        self.assertEqual(obs.num_card_per_player, [13, 13, 13])
+        self.assertEqual(obs.last_player_played, 5)
+
+    def test_is_valid_card_combination_single(self):
+        ace = Card(Suit.spades, Rank.ace)
+
+        is_valid = BigTwo.is_valid_card_combination([ace])
+
+        self.assertTrue(is_valid)
+
+    def test_is_valid_combination_double(self):
+        valid_pair = [
+            Card(Suit.spades, Rank.ace),
+            Card(Suit.hearts, Rank.ace)
+        ]
+
+        is_valid = BigTwo.is_valid_card_combination(valid_pair)
+
+        self.assertTrue(is_valid)
+
+    def test_is_valid_combination_double_err(self):
+        invalid_pair = [
+            Card(Suit.spades, Rank.ace),
+            Card(Suit.hearts, Rank.two)
+        ]
+
+        is_valid = BigTwo.is_valid_card_combination(invalid_pair)
+
+        self.assertFalse(is_valid)
+
+    def test_is_valid_combination_triple(self):
+        invalid_pair = [
+            Card(Suit.spades, Rank.ace),
+            Card(Suit.hearts, Rank.two),
+            Card(Suit.hearts, Rank.three),
+        ]
+
+        is_valid = BigTwo.is_valid_card_combination(invalid_pair)
+
+        self.assertFalse(is_valid)
+
+    def test_is_valid_combination_four(self):
+        invalid_pair = [
+            Card(Suit.spades, Rank.ace),
+            Card(Suit.hearts, Rank.two),
+            Card(Suit.hearts, Rank.three),
+            Card(Suit.hearts, Rank.four),
+        ]
+
+        is_valid = BigTwo.is_valid_card_combination(invalid_pair)
+
+        self.assertFalse(is_valid)
+
+    def test_is_valid_combination_invalid_straight(self):
+        invalid_pair = [
+            Card(Suit.spades, Rank.ace),
+            Card(Suit.hearts, Rank.two),
+            Card(Suit.hearts, Rank.three),
+            Card(Suit.hearts, Rank.four),
+            Card(Suit.hearts, Rank.six),
+        ]
+
+        is_valid = BigTwo.is_valid_card_combination(invalid_pair)
+
+        self.assertFalse(is_valid)
+
+    def test_is_valid_combination_valid_straight(self):
+        valid_pair = [
+            Card(Suit.spades, Rank.ace),
+            Card(Suit.hearts, Rank.two),
+            Card(Suit.hearts, Rank.three),
+            Card(Suit.hearts, Rank.four),
+            Card(Suit.hearts, Rank.five),
+        ]
+
+        is_valid = BigTwo.is_valid_card_combination(valid_pair)
+
+        self.assertTrue(is_valid)
+
+    def test_is_valid_combination_valid_full_house(self):
+        invalid_pair = [
+            Card(Suit.spades, Rank.ace),
+            Card(Suit.hearts, Rank.ace),
+            Card(Suit.clubs, Rank.ace),
+            Card(Suit.hearts, Rank.four),
+            Card(Suit.spades, Rank.four),
+        ]
+
+        is_valid = BigTwo.is_valid_card_combination(invalid_pair)
+
+        self.assertTrue(is_valid)
 
 
 if __name__ == '__main__':
