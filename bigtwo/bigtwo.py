@@ -14,6 +14,16 @@ def have_diamond_three(hand):
     return False
 
 
+class BigTwoObservation:
+    def __init__(self, num_card_per_player: list[int], last_cards_played: np.ndarray, your_hands: list[Card],
+                 current_player: int, last_player_played: int):
+        self.num_card_per_player = num_card_per_player
+        self.last_cards_played = last_cards_played
+        self.your_hands = your_hands
+        self.current_player = current_player
+        self.last_player_played = last_player_played
+
+
 class BigTwo:
     FULL_HOUSE = 1
     FOUR_OF_A_KIND = 2
@@ -26,7 +36,7 @@ class BigTwo:
      - can't skip once everyone else skipped
     """
 
-    def __init__(self) -> object:
+    def __init__(self):
         self.player_hands = Deck().shuffle_and_split(self.number_of_players())
         self.state = []
         self.current_player = None
@@ -276,7 +286,97 @@ class BigTwo:
 
         return hand
 
-    def _current_observation(self, player_number: int) -> tuple[list[int], np.ndarray, list[int], int, int]:
+    def step(self, raw_action: list[int]) -> tuple[BigTwoObservation, int, bool]:
+        # check if raw_action is valid
+        if len(raw_action) != 13:
+            return self._current_observation(self.current_player), -1, False
+
+        action = self.raw_action_to_cards(raw_action)
+
+        if len(action) == 0:
+            # can't skip on the first turn of the game or when everyone else skipped already
+            if self.is_first_turn() or self.player_last_played == self.current_player:
+                return self._current_observation(self.current_player), -1, False
+
+            # skipping
+            previous_player = self.current_player
+            self.current_player += 1
+            if self.current_player > self.number_of_players() - 1:
+                self.current_player = 0
+
+            return self._current_observation(previous_player), 0, False
+
+        if not BigTwo.is_valid_card_combination(action):
+            if len(action) > 5:
+                reward = (13 - len(action)) * -1
+            elif len(action) == 3 or len(action) == 4:
+                reward = -2
+            else:
+                reward = -1
+            return self._current_observation(self.current_player), reward, False
+
+        if self.is_first_turn() or self.player_last_played == self.current_player:
+            if self.is_first_turn() and not have_diamond_three(action):
+                # always need to play diamond three first
+                return self._current_observation(self.current_player), -1, False
+            return self._apply_action(action)
+
+        # there are cards played already
+        current_combination = self.state[len(self.state) - 1]
+
+        if not BigTwo.is_bigger(action, current_combination):
+            # the cards that the player is played is not bigger than the existing combination so it's their turn again
+            return self._current_observation(self.current_player), -1, False
+
+        return self._apply_action(action)
+
+    def reset(self) -> BigTwoObservation:
+        self.player_hands = Deck().shuffle_and_split(self.number_of_players())
+        self.state = []
+
+        self.current_player = None
+        self.player_last_played = None
+
+        if self.current_player is None:
+            for idx, player_hand in enumerate(self.player_hands):
+                if have_diamond_three(player_hand):
+                    self.current_player = idx
+
+        return self._current_observation(self._get_current_player())
+
+    def raw_action_to_cards(self, raw_action) -> list[Card]:
+        # assume the action is always going to be from the current player
+        player_hand = self.player_hands[self.current_player]
+
+        action = []
+        for idx, value in enumerate(raw_action):
+            if value == 1:
+                action.append(player_hand[idx])
+
+        return action
+
+    def is_first_turn(self) -> bool:
+        return len(self.state) == 0
+
+    def get_current_player_obs(self) -> BigTwoObservation:
+        return self._current_observation(self._get_current_player())
+
+    def display_all_player_hands(self) -> None:
+        for idx, hand in enumerate(self.player_hands):
+            print(idx, ' '.join(str(x) for x in hand))
+
+    def _get_current_player(self) -> int:
+        if self.current_player is None:
+            for idx, player_hand in enumerate(self.player_hands):
+                if have_diamond_three(player_hand):
+                    self.current_player = idx
+                    return idx
+
+            raise ValueError("One player should have Diamond three in their hand")
+
+        return self.current_player
+
+    def _current_observation(self, player_number: int) -> BigTwoObservation:
         num_card_per_player = []
         while True:
             index = player_number + 1
@@ -288,28 +388,21 @@ class BigTwo:
             if len(num_card_per_player) == len(self.player_hands) - 1:
                 break
 
-        hands_in_number = [card.to_number() for card in self.player_hands[player_number]]
-
-        if len(hands_in_number) < 13:
-            # if there is less than 13 cards, make the array up to 13 long by filling up with -1
-            padding = [-1 for _ in range(13 - len(hands_in_number))]
-            hands_in_number.extend(padding)
-
         last_cards_played = np.repeat(-1, 5)
         if len(self.state) > 0:
             cards = self.state[len(self.state) - 1]
             card_number = [card.to_number() for card in cards]
             last_cards_played.put(range(len(cards)), card_number)
 
-        return (
+        return BigTwoObservation(
             num_card_per_player,
             last_cards_played,
-            hands_in_number,
+            self.player_hands[player_number],
             player_number,
             self.player_last_played if self.player_last_played is not None else 5
         )
 
-    def _apply_action(self, action):
+    def _apply_action(self, action) -> tuple[BigTwoObservation, int, bool]:
         self.state.append(action)
 
         self.player_hands[self.current_player] = BigTwo.remove_card_from_hand(
@@ -328,95 +421,3 @@ class BigTwo:
         if game_finished:
             reward = 100
         return self._current_observation(previous_player), reward, game_finished
-
-    def convert_raw_action_cards(self, raw_action):
-        # assume the action is always going to be from the current player
-        player_hand = self.player_hands[self.current_player]
-
-        action = []
-        for idx, value in enumerate(raw_action):
-            if value == 1:
-                action.append(player_hand[idx])
-
-        return action
-
-    def is_first_turn_of_the_game(self):
-        return len(self.state) == 0
-
-    def step(self, raw_action):
-        # check if raw_action is valid
-        for idx, value in enumerate(raw_action):
-            if value == 1 and idx > len(self.player_hands[self.current_player]):
-                # can't pick a card that doesn't exists
-                return self._current_observation(self.current_player), -13, False
-
-        action = self.convert_raw_action_cards(raw_action)
-
-        if len(action) == 0:
-            # can't skip on the first turn of the game or when everyone else skipped already
-            if self.is_first_turn_of_the_game() or self.player_last_played == self.current_player:
-                return self._current_observation(self.current_player), -1, False
-
-            # this mean player is skipping
-            previous_player = self.current_player
-            self.current_player += 1
-            if self.current_player > self.number_of_players() - 1:
-                self.current_player = 0
-
-            return self._current_observation(previous_player), 0, False
-
-        if not BigTwo.is_valid_card_combination(action):
-            if len(action) > 5:
-                reward = (13 - len(action)) * -1
-            elif len(action) == 3 or len(action) == 4:
-                reward = -2
-            else:
-                reward = -1
-            return self._current_observation(self.current_player), reward, False
-
-        if self.is_first_turn_of_the_game() or self.player_last_played == self.current_player:
-            if self.is_first_turn_of_the_game() and not have_diamond_three(action):
-                # always need to play diamond three first
-                return self._current_observation(self.current_player), -1, False
-            return self._apply_action(action)
-
-        # there are cards played already
-        current_combination = self.state[len(self.state) - 1]
-
-        if not BigTwo.is_bigger(action, current_combination):
-            # the cards that the player is played is not bigger than the existing combination so it's their turn again
-            return self._current_observation(self.current_player), -1, False
-
-        return self._apply_action(action)
-
-    def display_all_player_hands(self):
-        for idx, hand in enumerate(self.player_hands):
-            print(idx, ' '.join(str(x) for x in hand))
-
-    def _get_current_player(self):
-        if self.current_player is None:
-            for idx, player_hand in enumerate(self.player_hands):
-                if have_diamond_three(player_hand):
-                    self.current_player = idx
-                    return idx
-
-            raise ValueError("One player should have Diamond three in their hand")
-
-        return self.current_player
-
-    def reset(self):
-        self.player_hands = Deck().shuffle_and_split(self.number_of_players())
-        self.state = []
-
-        self.current_player = None
-        self.player_last_played = None
-
-        if self.current_player is None:
-            for idx, player_hand in enumerate(self.player_hands):
-                if have_diamond_three(player_hand):
-                    self.current_player = idx
-
-        return self._current_observation(self._get_current_player())
-
-    def get_current_player_obs(self):
-        return self._current_observation(self._get_current_player())

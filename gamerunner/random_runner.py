@@ -15,16 +15,16 @@ def train():
     while True:
         obs = env.get_current_player_obs()
         print("turn ", episode_step)
-        print("current_player", obs[3])
-        print('before player hand: ' + Card.display_cards_string(obs[2]))
-        print('last_player_played: ', obs[4])
-        print('cards played: ' + Card.display_cards_string(obs[1]))
+        print("current_player", obs.current_player)
+        print(f"before player hand: {obs.your_hands}")
+        print('last_player_played: ', obs.last_player_played)
+        print('cards played: ' + Card.display_cards_string(obs.last_cards_played))
 
-        action = player_list[obs[3]].action(obs)
+        action = player_list[obs.current_player].action(obs)
         new_obs, reward, done = env.step(action)
         episode_step += 1
         print('action: ' + str(action))
-        print('after player hand:' + Card.display_cards_string(new_obs[2]))
+        print(f"after player hand: {new_obs.your_hands}")
         print("====")
 
         if done:
