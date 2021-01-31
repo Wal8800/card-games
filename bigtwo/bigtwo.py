@@ -1,7 +1,8 @@
 from collections import Counter
 
-import numpy as np
 from gym import spaces
+from typing import List, Dict, Tuple
+import numpy as np
 
 from playingcards.card import Card, Deck, Suit, Rank
 
@@ -15,7 +16,7 @@ def have_diamond_three(hand):
 
 
 class BigTwoObservation:
-    def __init__(self, num_card_per_player: list[int], last_cards_played: np.ndarray, your_hands: list[Card],
+    def __init__(self, num_card_per_player: List[int], last_cards_played: List[Card], your_hands: List[Card],
                  current_player: int, last_player_played: int):
         self.num_card_per_player = num_card_per_player
         self.last_cards_played = last_cards_played
@@ -64,7 +65,7 @@ class BigTwo:
         self.action_space = spaces.MultiBinary(13)
 
     @staticmethod
-    def rank_order() -> dict[Rank, int]:
+    def rank_order() -> Dict[Rank, int]:
         return {
             Rank.three: 1,
             Rank.four: 2,
@@ -82,7 +83,7 @@ class BigTwo:
         }
 
     @staticmethod
-    def suit_order() -> dict[Suit, int]:
+    def suit_order() -> Dict[Suit, int]:
         return {
             Suit.diamond: 1,
             Suit.clubs: 2,
@@ -105,7 +106,7 @@ class BigTwo:
         return 4
 
     @staticmethod
-    def is_valid_card_combination(cards: list[Card]) -> bool:
+    def is_valid_card_combination(cards: List[Card]) -> bool:
         if len(cards) == 1:
             return True
 
@@ -145,7 +146,7 @@ class BigTwo:
         return BigTwo.is_straight(cards)
 
     @staticmethod
-    def is_straight(cards: list[Card]) -> bool:
+    def is_straight(cards: List[Card]) -> bool:
         rank_order_map = BigTwo.rank_order()
         cards = sorted(cards, key=lambda c: rank_order_map[c.rank])
 
@@ -173,7 +174,7 @@ class BigTwo:
         return True
 
     @staticmethod
-    def is_bigger(cards: list[Card], current_combination: list[Card]) -> bool:
+    def is_bigger(cards: List[Card], current_combination: List[Card]) -> bool:
         if len(cards) is not len(current_combination):
             return False
 
@@ -242,7 +243,7 @@ class BigTwo:
         return rank_order[common_one_rank] > rank_order[common_two_rank]
 
     @staticmethod
-    def get_five_card_type(cards: list[Card]):
+    def get_five_card_type(cards: List[Card]):
         if len(cards) != 5:
             raise ValueError("Need 5 cards to determine what type")
 
@@ -286,7 +287,7 @@ class BigTwo:
 
         return hand
 
-    def step(self, raw_action: list[int]) -> tuple[BigTwoObservation, int, bool]:
+    def step(self, raw_action: List[int]) -> Tuple[BigTwoObservation, int, bool]:
         # check if raw_action is valid
         if len(raw_action) != 13:
             return self._current_observation(self.current_player), -1, False
@@ -344,7 +345,7 @@ class BigTwo:
 
         return self._current_observation(self._get_current_player())
 
-    def raw_action_to_cards(self, raw_action) -> list[Card]:
+    def raw_action_to_cards(self, raw_action) -> List[Card]:
         # assume the action is always going to be from the current player
         player_hand = self.player_hands[self.current_player]
 
@@ -388,11 +389,9 @@ class BigTwo:
             if len(num_card_per_player) == len(self.player_hands) - 1:
                 break
 
-        last_cards_played = np.repeat(-1, 5)
+        last_cards_played = []
         if len(self.state) > 0:
-            cards = self.state[len(self.state) - 1]
-            card_number = [card.to_number() for card in cards]
-            last_cards_played.put(range(len(cards)), card_number)
+            last_cards_played = self.state[-1]
 
         return BigTwoObservation(
             num_card_per_player,
@@ -402,7 +401,7 @@ class BigTwo:
             self.player_last_played if self.player_last_played is not None else 5
         )
 
-    def _apply_action(self, action) -> tuple[BigTwoObservation, int, bool]:
+    def _apply_action(self, action) -> Tuple[BigTwoObservation, int, bool]:
         self.state.append(action)
 
         self.player_hands[self.current_player] = BigTwo.remove_card_from_hand(

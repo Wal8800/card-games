@@ -2,6 +2,8 @@ import itertools
 from enum import Enum
 from random import shuffle
 
+from typing import List
+
 
 class Suit(Enum):
     spades = "♠"
@@ -113,6 +115,6 @@ class Deck:
     def shuffle_deck(self):
         shuffle(self.cards)
 
-    def shuffle_and_split(self, n: int) -> list[list[Card]]:
+    def shuffle_and_split(self, n: int) -> List[List[Card]]:
         self.shuffle_deck()
         return [self.cards[i::n] for i in range(n)]
