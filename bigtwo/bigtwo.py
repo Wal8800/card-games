@@ -2,7 +2,6 @@ from collections import Counter
 
 from gym import spaces
 from typing import List, Dict, Tuple
-import numpy as np
 
 from playingcards.card import Card, Deck, Suit, Rank
 
@@ -292,7 +291,13 @@ class BigTwo:
         if len(raw_action) != 13:
             return self._current_observation(self.current_player), -1, False
 
-        action = self.raw_action_to_cards(raw_action)
+        player_hand = self.player_hands[self.current_player]
+        action = []
+        for idx, value in enumerate(raw_action):
+            if value == 1:
+                if idx >= len(player_hand):
+                    return self._current_observation(self.current_player), -1, False
+                action.append(player_hand[idx])
 
         if len(action) == 0:
             # can't skip on the first turn of the game or when everyone else skipped already
@@ -308,13 +313,7 @@ class BigTwo:
             return self._current_observation(previous_player), 0, False
 
         if not BigTwo.is_valid_card_combination(action):
-            if len(action) > 5:
-                reward = (13 - len(action)) * -1
-            elif len(action) == 3 or len(action) == 4:
-                reward = -2
-            else:
-                reward = -1
-            return self._current_observation(self.current_player), reward, False
+            return self._current_observation(self.current_player), -1, False
 
         if self.is_first_turn() or self.player_last_played == self.current_player:
             if self.is_first_turn() and not have_diamond_three(action):
@@ -345,22 +344,17 @@ class BigTwo:
 
         return self._current_observation(self._get_current_player())
 
-    def raw_action_to_cards(self, raw_action) -> List[Card]:
-        # assume the action is always going to be from the current player
-        player_hand = self.player_hands[self.current_player]
-
-        action = []
-        for idx, value in enumerate(raw_action):
-            if value == 1:
-                action.append(player_hand[idx])
-
-        return action
-
     def is_first_turn(self) -> bool:
         return len(self.state) == 0
 
+    def get_hands_played(self):
+        return len(self.state)
+
     def get_current_player_obs(self) -> BigTwoObservation:
         return self._current_observation(self._get_current_player())
+
+    def get_player_obs(self, player_number: int):
+        return self._current_observation(player_number)
 
     def display_all_player_hands(self) -> None:
         for idx, hand in enumerate(self.player_hands):
