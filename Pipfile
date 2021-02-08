@@ -11,6 +11,8 @@ numpy = "*"
 scipy = "*"
 tensorflow-probability = "*"
 tensorflow = "*"
+seaborn = "*"
+matplotlib = "*"
 
 [requires]
 python_version = "3.8"

@@ -1,7 +1,7 @@
 from collections import Counter
+from typing import List, Dict, Tuple
 
 from gym import spaces
-from typing import List, Dict, Tuple
 
 from playingcards.card import Card, Deck, Suit, Rank
 
@@ -31,14 +31,9 @@ class BigTwo:
     FLUSH = 4
     STRAIGHT_FLUSH = 5
 
-    """
-    TODO
-     - can't skip once everyone else skipped
-    """
-
     def __init__(self):
         self.player_hands = Deck().shuffle_and_split(self.number_of_players())
-        self.state = []
+        self.state: List[Tuple[int, List[Card]]] = []
         self.current_player = None
         self.player_last_played = None
         self.n = 4
@@ -322,7 +317,7 @@ class BigTwo:
             return self._apply_action(action)
 
         # there are cards played already
-        current_combination = self.state[len(self.state) - 1]
+        current_combination = self.state[-1][1]
 
         if not BigTwo.is_bigger(action, current_combination):
             # the cards that the player is played is not bigger than the existing combination so it's their turn again
@@ -385,7 +380,7 @@ class BigTwo:
 
         last_cards_played = []
         if len(self.state) > 0:
-            last_cards_played = self.state[-1]
+            last_cards_played = self.state[-1][1]
 
         return BigTwoObservation(
             num_card_per_player,
@@ -396,7 +391,7 @@ class BigTwo:
         )
 
     def _apply_action(self, action) -> Tuple[BigTwoObservation, int, bool]:
-        self.state.append(action)
+        self.state.append((self.current_player, action))
 
         self.player_hands[self.current_player] = BigTwo.remove_card_from_hand(
             action,
@@ -409,7 +404,7 @@ class BigTwo:
             self.current_player = 0
         self.player_last_played = previous_player
 
-        reward = 1 * len(action)
+        reward = 1
         game_finished = len(self.player_hands[previous_player]) == 0
         if game_finished:
             reward = 100
