@@ -1,6 +1,6 @@
 import unittest
 
-from bigtwo import BigTwo
+from bigtwo import BigTwo, BigTwoHand
 from playingcards.card import Card, Suit, Rank
 
 
@@ -245,25 +245,6 @@ class TestBigTwo(unittest.TestCase):
         self.assertTrue(BigTwo.is_bigger(four_of_a_kind, full_house), "Four of a kind bigger than Full house")
         self.assertTrue(BigTwo.is_bigger(straight_flush, four_of_a_kind), "Straight flush bigger than 4 of a kind")
 
-    def test_remove_card_from_hand(self):
-        cards = [
-            Card(Suit.diamond, Rank.king),
-            Card(Suit.diamond, Rank.three)
-        ]
-
-        hand = [
-            Card(Suit.hearts, Rank.king),
-            Card(Suit.diamond, Rank.king),
-            Card(Suit.diamond, Rank.three),
-            Card(Suit.spades, Rank.three)
-        ]
-
-        result = BigTwo.remove_card_from_hand(cards, hand)
-
-        self.assertEqual(len(result), 2)
-        self.assertNotIn(Card(Suit.diamond, Rank.king), result)
-        self.assertNotIn(Card(Suit.diamond, Rank.three), result)
-
     def test_get_five_card_type(self):
         straight = [
             Card(Suit.hearts, Rank.seven),
@@ -321,15 +302,6 @@ class TestBigTwo(unittest.TestCase):
         ]
 
         self.assertRaises(ValueError, BigTwo.get_five_card_type, hand)
-
-    def test_reset_obs(self):
-        env = BigTwo()
-
-        obs = env.reset()
-
-        self.assertEqual(len(obs.your_hands), 13)
-        self.assertEqual(obs.num_card_per_player, [13, 13, 13])
-        self.assertEqual(obs.last_player_played, 5)
 
     def test_is_valid_card_combination_single(self):
         ace = Card(Suit.spades, Rank.ace)
@@ -419,6 +391,271 @@ class TestBigTwo(unittest.TestCase):
         is_valid = BigTwo.is_valid_card_combination(invalid_pair)
 
         self.assertTrue(is_valid)
+
+    def test_bigtwo_hand_remove_cards_comb_left(self):
+        hand = [
+            Card(Suit.spades, Rank.ace),
+            Card(Suit.hearts, Rank.ace),
+            Card(Suit.clubs, Rank.ace),
+            Card(Suit.hearts, Rank.four),
+            Card(Suit.spades, Rank.four),
+            Card(Suit.clubs, Rank.four),
+            Card(Suit.clubs, Rank.ten),
+        ]
+
+        bigtwo_hand = BigTwoHand(hand)
+
+        expected_comb = (
+            Card(Suit.spades, Rank.ace),
+            Card(Suit.hearts, Rank.ace),
+            Card(Suit.clubs, Rank.ace),
+            Card(Suit.hearts, Rank.four),
+            Card(Suit.spades, Rank.four)
+        )
+
+        self.assertEqual(len(bigtwo_hand.combinations), 1)
+        self.assertIn(BigTwo.FULL_HOUSE, bigtwo_hand.combinations)
+        self.assertEqual(len(bigtwo_hand.combinations[BigTwo.FULL_HOUSE]), 6)
+        self.assertIn(expected_comb, bigtwo_hand.combinations[BigTwo.FULL_HOUSE])
+
+        bigtwo_hand.remove_cards([Card(Suit.spades, Rank.ace)])
+
+        self.assertEqual(len(bigtwo_hand), 6)
+        self.assertEqual(len(bigtwo_hand.combinations), 1)
+        self.assertIn(BigTwo.FULL_HOUSE, bigtwo_hand.combinations)
+        self.assertEqual(len(bigtwo_hand.combinations[BigTwo.FULL_HOUSE]), 1)
+
+    def test_bigtwo_hand_remove_cards_no_comb_left(self):
+        hand = [
+            Card(Suit.spades, Rank.ace),
+            Card(Suit.hearts, Rank.ace),
+            Card(Suit.clubs, Rank.ace),
+            Card(Suit.hearts, Rank.four),
+            Card(Suit.spades, Rank.four),
+            Card(Suit.clubs, Rank.ten),
+        ]
+
+        bigtwo_hand = BigTwoHand(hand)
+
+        expected_comb = (
+            Card(Suit.spades, Rank.ace),
+            Card(Suit.hearts, Rank.ace),
+            Card(Suit.clubs, Rank.ace),
+            Card(Suit.hearts, Rank.four),
+            Card(Suit.spades, Rank.four)
+        )
+
+        self.assertEqual(len(bigtwo_hand.combinations), 1)
+        self.assertIn(BigTwo.FULL_HOUSE, bigtwo_hand.combinations)
+        self.assertIn(expected_comb, bigtwo_hand.combinations[BigTwo.FULL_HOUSE])
+
+        bigtwo_hand.remove_cards([Card(Suit.spades, Rank.ace)])
+
+        self.assertEqual(len(bigtwo_hand), 5)
+        self.assertEqual(len(bigtwo_hand.combinations), 0)
+
+    def test_play_diamond_three(self):
+        env = BigTwo()
+        obs = env.reset()
+
+        self.assertEqual(len(obs.your_hands), 13)
+        self.assertEqual(obs.num_card_per_player, [13, 13, 13])
+        self.assertEqual(obs.last_player_played, 5)
+
+        my_player_number = obs.current_player
+
+        raw_action = []
+        for idx, card in enumerate(obs.your_hands):
+            if card.rank == Rank.three and card.suit == Suit.diamond:
+                raw_action.append(1)
+                continue
+
+            raw_action.append(0)
+
+        new_obs, reward, done = env.step(raw_action)
+
+        self.assertFalse(done)
+        self.assertEqual(reward, 1)
+
+        self.assertEqual(len(new_obs.your_hands), 12)
+        self.assertEqual(new_obs.last_cards_played, [Card(Suit.diamond, Rank.three)])
+        self.assertEqual(new_obs.last_player_played, my_player_number)
+
+    def test_playable_cards_empty_state(self):
+        env = BigTwo()
+
+        hand = [
+            Card(Suit.hearts, Rank.ace),
+            Card(Suit.diamond, Rank.three)
+        ]
+
+        playable = env.have_playable_cards([], BigTwoHand(hand))
+
+        self.assertTrue(playable)
+
+    def test_playable_cards_single_true(self):
+        env = BigTwo()
+
+        hand = [
+            Card(Suit.hearts, Rank.ace),
+            Card(Suit.clubs, Rank.four),
+        ]
+
+        playable = env.have_playable_cards([Card(Suit.spades, Rank.ten)], BigTwoHand(hand))
+
+        self.assertTrue(playable, "ace is higher than ten")
+
+        hand = [
+            Card(Suit.hearts, Rank.ace),
+            Card(Suit.clubs, Rank.four),
+        ]
+
+        playable = env.have_playable_cards([Card(Suit.diamond, Rank.four)], BigTwoHand(hand))
+
+        self.assertTrue(playable, "club 4 is higher than diamond 4")
+
+    def test_playable_cards_single_false(self):
+        env = BigTwo()
+
+        hand = [
+            Card(Suit.hearts, Rank.ace),
+            Card(Suit.clubs, Rank.four),
+        ]
+
+        playable = env.have_playable_cards([Card(Suit.spades, Rank.two)], BigTwoHand(hand))
+
+        self.assertFalse(playable, "two is higher than all cards")
+
+        hand = [
+            Card(Suit.hearts, Rank.ace),
+            Card(Suit.clubs, Rank.four),
+        ]
+
+        playable = env.have_playable_cards([Card(Suit.spades, Rank.ace)], BigTwoHand(hand))
+
+        self.assertFalse(playable, "spades ace is higher than hearts ace")
+
+    def test_playable_cards_double_true(self):
+        env = BigTwo()
+
+        hand = [
+            Card(Suit.hearts, Rank.ace),
+            Card(Suit.spades, Rank.ace),
+        ]
+
+        target = [
+            Card(Suit.diamond, Rank.ace),
+            Card(Suit.clubs, Rank.ace),
+        ]
+
+        playable = env.have_playable_cards(target, BigTwoHand(hand))
+
+        self.assertTrue(playable)
+
+    def test_playable_cards_double_false(self):
+        env = BigTwo()
+
+        hand = [
+            Card(Suit.hearts, Rank.ace),
+            Card(Suit.diamond, Rank.ace),
+        ]
+
+        target = [
+            Card(Suit.spades, Rank.ace),
+            Card(Suit.clubs, Rank.ace),
+        ]
+
+        playable = env.have_playable_cards(target, BigTwoHand(hand))
+
+        self.assertFalse(playable)
+
+    def test_playable_cards_combination_true(self):
+        env = BigTwo()
+
+        hand = [
+            Card(Suit.hearts, Rank.ace),
+            Card(Suit.diamond, Rank.ace),
+            Card(Suit.spades, Rank.ace),
+            Card(Suit.spades, Rank.ten),
+            Card(Suit.clubs, Rank.ten),
+            Card(Suit.clubs, Rank.seven)
+        ]
+
+        target = [
+            Card(Suit.spades, Rank.queen),
+            Card(Suit.spades, Rank.jack),
+            Card(Suit.spades, Rank.five),
+            Card(Suit.spades, Rank.four),
+            Card(Suit.spades, Rank.seven)
+        ]
+
+        playable = env.have_playable_cards(target, BigTwoHand(hand))
+
+        self.assertTrue(playable)
+
+        hand = [
+            Card(Suit.spades, Rank.two),
+            Card(Suit.spades, Rank.ten),
+            Card(Suit.spades, Rank.nine),
+            Card(Suit.spades, Rank.eight),
+            Card(Suit.spades, Rank.three)
+        ]
+
+        target = [
+            Card(Suit.spades, Rank.queen),
+            Card(Suit.spades, Rank.jack),
+            Card(Suit.spades, Rank.five),
+            Card(Suit.spades, Rank.four),
+            Card(Suit.spades, Rank.seven)
+        ]
+
+        playable = env.have_playable_cards(target, BigTwoHand(hand))
+
+        self.assertTrue(playable)
+
+    def test_playable_cards_combination_false(self):
+        env = BigTwo()
+
+        hand = [
+            Card(Suit.spades, Rank.queen),
+            Card(Suit.spades, Rank.jack),
+            Card(Suit.spades, Rank.five),
+            Card(Suit.spades, Rank.four),
+            Card(Suit.spades, Rank.seven),
+            Card(Suit.clubs, Rank.seven)
+        ]
+
+        target = [
+            Card(Suit.hearts, Rank.ace),
+            Card(Suit.diamond, Rank.ace),
+            Card(Suit.spades, Rank.ace),
+            Card(Suit.spades, Rank.ten),
+            Card(Suit.clubs, Rank.ten),
+        ]
+
+        playable = env.have_playable_cards(target, BigTwoHand(hand))
+
+        self.assertFalse(playable)
+
+        hand = [
+            Card(Suit.clubs, Rank.five),
+            Card(Suit.spades, Rank.six),
+            Card(Suit.hearts, Rank.nine),
+            Card(Suit.spades, Rank.eight),
+            Card(Suit.diamond, Rank.seven)
+        ]
+
+        target = [
+            Card(Suit.spades, Rank.queen),
+            Card(Suit.spades, Rank.jack),
+            Card(Suit.spades, Rank.ace),
+            Card(Suit.hearts, Rank.king),
+            Card(Suit.spades, Rank.ten)
+        ]
+
+        playable = env.have_playable_cards(target, BigTwoHand(hand))
+
+        self.assertFalse(playable)
 
 
 if __name__ == '__main__':

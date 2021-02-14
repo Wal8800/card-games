@@ -250,7 +250,7 @@ def train(batch_size=4000, epoch=50):
         sample_time_taken = time.time() - sample_start_time
 
         update_start_time = time.time()
-        policy_loss, value_loss = bot.update(buf)
+        policy_loss, value_loss = bot.update(buf, mini_batch_size=512)
 
         update_time_taken = time.time() - update_start_time
 

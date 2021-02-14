@@ -1,1 +1,1 @@
-from .bigtwo import BigTwo
+from .bigtwo import BigTwo, BigTwoHand

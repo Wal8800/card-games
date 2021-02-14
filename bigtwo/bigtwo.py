@@ -1,6 +1,7 @@
 from collections import Counter
+from collections.abc import MutableSequence
 from typing import List, Dict, Tuple
-
+import itertools
 from gym import spaces
 
 from playingcards.card import Card, Deck, Suit, Rank
@@ -14,8 +15,67 @@ def have_diamond_three(hand):
     return False
 
 
+class BigTwoHand(MutableSequence):
+    def __init__(self, cards: List[Card]):
+        self.cards = cards
+
+        self.combinations: Dict[int, List[Tuple[Card]]] = {}
+        for combination in itertools.combinations(self.cards, 5):
+            try:
+                c_type = BigTwo.get_five_card_type(list(combination))
+
+                current_list = self.combinations.get(c_type, [])
+                current_list.append(combination)
+                self.combinations[c_type] = current_list
+            except ValueError:
+                continue
+
+        super().__init__()
+
+    def have_diamond_three(self):
+        for card in self.cards:
+            if card.suit == Suit.diamond and card.rank == Rank.three:
+                return True
+
+        return False
+
+    def remove_cards(self, to_remove: List[Card]):
+        for card in to_remove:
+            self.cards.remove(card)
+            self.__remove_combinations(card)
+
+    def __remove_combinations(self, target: Card):
+        c_types = list(self.combinations.keys())
+        for c_type in c_types:
+            combinations = self.combinations[c_type]
+            new_combinations = [x for x in combinations if target not in x]
+
+            if len(new_combinations) > 0:
+                self.combinations[c_type] = new_combinations
+            else:
+                del self.combinations[c_type]
+
+    def __len__(self):
+        return len(self.cards)
+
+    def __getitem__(self, i):
+        return self.cards[i]
+
+    def __delitem__(self, key):
+        del self.cards[key]
+
+    def __setitem__(self, key, value):
+        self.cards[key] = value
+
+    def insert(self, index: int, value: Card) -> None:
+        self.cards.insert(index, value)
+
+    def __repr__(self):
+        return ' '.join([str(c) for c in self.cards])
+
+
 class BigTwoObservation:
-    def __init__(self, num_card_per_player: List[int], last_cards_played: List[Card], your_hands: List[Card],
+    def __init__(self, num_card_per_player: List[int], last_cards_played: List[Card], your_hands: BigTwoHand,
                  current_player: int, last_player_played: int):
         self.num_card_per_player = num_card_per_player
         self.last_cards_played = last_cards_played
@@ -32,7 +92,7 @@ class BigTwo:
     STRAIGHT_FLUSH = 5
 
     def __init__(self):
-        self.player_hands = Deck().shuffle_and_split(self.number_of_players())
+        self.player_hands = self.__create_player_hand()
         self.state: List[Tuple[int, List[Card]]] = []
         self.current_player = None
         self.player_last_played = None
@@ -40,7 +100,7 @@ class BigTwo:
 
         if self.current_player is None:
             for idx, player_hand in enumerate(self.player_hands):
-                if have_diamond_three(player_hand):
+                if player_hand.have_diamond_three():
                     self.current_player = idx
 
         self.observation_space = spaces.Tuple((
@@ -141,8 +201,7 @@ class BigTwo:
 
     @staticmethod
     def is_straight(cards: List[Card]) -> bool:
-        rank_order_map = BigTwo.rank_order()
-        cards = sorted(cards, key=lambda c: rank_order_map[c.rank])
+        cards = sorted(cards, key=lambda c: BigTwo.rank_order()[c.rank])
 
         """
         special case:
@@ -154,8 +213,8 @@ class BigTwo:
             card_one = cards[x - 1]
             card_two = cards[x]
 
-            card_one_order = rank_order_map[card_one.rank]
-            card_two_order = rank_order_map[card_two.rank]
+            card_one_order = BigTwo.rank_order()[card_one.rank]
+            card_two_order = BigTwo.rank_order()[card_two.rank]
 
             # special case, can ignore
             if card_one.rank == Rank.five and card_two.rank == Rank.ace or \
@@ -271,16 +330,6 @@ class BigTwo:
 
         raise ValueError("invalid card combinations")
 
-    @staticmethod
-    def remove_card_from_hand(cards, hand):
-        for card in cards:
-            for card_in_hand in hand:
-                if card == card_in_hand:
-                    hand.remove(card_in_hand)
-                    break
-
-        return hand
-
     def step(self, raw_action: List[int]) -> Tuple[BigTwoObservation, int, bool]:
         # check if raw_action is valid
         if len(raw_action) != 13:
@@ -299,13 +348,16 @@ class BigTwo:
             if self.is_first_turn() or self.player_last_played == self.current_player:
                 return self._current_observation(self.current_player), -1, False
 
+            if self.have_playable_cards(self.get_current_combination(), player_hand):
+                return self._current_observation(self.current_player), -1, False
+
             # skipping
             previous_player = self.current_player
             self.current_player += 1
             if self.current_player > self.number_of_players() - 1:
                 self.current_player = 0
 
-            return self._current_observation(previous_player), 0, False
+            return self._current_observation(previous_player), 1, False
 
         if not BigTwo.is_valid_card_combination(action):
             return self._current_observation(self.current_player), -1, False
@@ -317,16 +369,14 @@ class BigTwo:
             return self._apply_action(action)
 
         # there are cards played already
-        current_combination = self.state[-1][1]
-
-        if not BigTwo.is_bigger(action, current_combination):
+        if not BigTwo.is_bigger(action, self.get_current_combination()):
             # the cards that the player is played is not bigger than the existing combination so it's their turn again
             return self._current_observation(self.current_player), -1, False
 
         return self._apply_action(action)
 
     def reset(self) -> BigTwoObservation:
-        self.player_hands = Deck().shuffle_and_split(self.number_of_players())
+        self.player_hands = self.__create_player_hand()
         self.state = []
 
         self.current_player = None
@@ -334,16 +384,104 @@ class BigTwo:
 
         if self.current_player is None:
             for idx, player_hand in enumerate(self.player_hands):
-                if have_diamond_three(player_hand):
+                if player_hand.have_diamond_three():
                     self.current_player = idx
 
         return self._current_observation(self._get_current_player())
+
+    def is_rank_gt(self, rank_one: Rank, rank_two: Rank) -> bool:
+        rank_order = BigTwo.rank_order()
+        return rank_order[rank_one] > rank_order[rank_two]
+
+    def is_suit_gt(self, suit_one: Suit, suit_two: Suit) -> bool:
+        suit_order = BigTwo.suit_order()
+        return suit_order[suit_one] > suit_order[suit_two]
+
+    def have_playable_cards(self, target: List[Card], player_hand: BigTwoHand) -> bool:
+        if len(target) == 0:
+            return player_hand.have_diamond_three()
+
+        if len(target) == 1:
+            return self.__have_playable_single_card(target[0], player_hand)
+
+        if len(target) == 2:
+            return self.__have_playable_double_card(target, player_hand)
+
+        return self.__have_playable_combination(target, player_hand)
+
+    def __have_playable_single_card(self, card: Card, player_hand: BigTwoHand) -> bool:
+        target_rank = card.rank
+        target_suit = card.suit
+        for card in player_hand:
+            if card.rank == target_rank and self.is_suit_gt(card.suit, target_suit):
+                return True
+
+            if self.is_rank_gt(card.rank, target_rank):
+                return True
+
+        return False
+
+    def __have_playable_double_card(self, pairs: List[Card], player_hand: BigTwoHand) -> bool:
+        rank_freq = {}
+        rank_cards = {}
+        target_rank = pairs[0].rank
+        for card in player_hand:
+            rank_freq[card.rank] = rank_freq.get(card.rank, 0) + 1
+            card_list = rank_cards.get(card.rank, [])
+            card_list.append(card)
+            rank_cards[card.rank] = card_list
+
+        if target_rank not in rank_freq:
+            return False
+
+        if rank_freq[target_rank] != 2:
+            return False
+
+        # need to figure out if the suit is higher
+        max_target_suit = pairs[0].suit if self.is_suit_gt(pairs[0].suit, pairs[1].suit) else pairs[1].suit
+
+        for card in rank_cards[target_rank]:
+            if self.is_suit_gt(card.suit, max_target_suit):
+                return True
+
+        return False
+
+    def __have_playable_combination(self, last_played_cards: List[Card], player_hand: BigTwoHand) -> bool:
+        if len(player_hand) < 5:
+            return False
+
+        current_c_type = BigTwo.get_five_card_type(last_played_cards)
+        curr_c_type_rank = BigTwo.combination_order()[current_c_type]
+
+        greater_c_type = [c_type for c_type, rank in BigTwo.combination_order().items() if rank > curr_c_type_rank]
+
+        for t in greater_c_type:
+            if t in player_hand.combinations:
+                return True
+
+        # doesn't have the same combination in the available hand so return false because other possible combination
+        # is smaller.
+        if current_c_type not in player_hand.combinations:
+            return False
+
+        player_combinations = player_hand.combinations[current_c_type]
+        for combinations in player_combinations:
+            if BigTwo.is_bigger(list(combinations), last_played_cards):
+                return True
+
+        return False
 
     def is_first_turn(self) -> bool:
         return len(self.state) == 0
 
     def get_hands_played(self):
         return len(self.state)
+
+    def get_current_combination(self) -> List[Card]:
+        if len(self.state) == 0:
+            return []
+
+        return self.state[-1][1]
 
     def get_current_player_obs(self) -> BigTwoObservation:
         return self._current_observation(self._get_current_player())
@@ -358,7 +496,7 @@ class BigTwo:
     def _get_current_player(self) -> int:
         if self.current_player is None:
             for idx, player_hand in enumerate(self.player_hands):
-                if have_diamond_three(player_hand):
+                if player_hand.have_diamond_three():
                     self.current_player = idx
                     return idx
 
@@ -380,7 +518,7 @@ class BigTwo:
 
         last_cards_played = []
         if len(self.state) > 0:
-            last_cards_played = self.state[-1][1]
+            last_cards_played = self.get_current_combination()
 
         return BigTwoObservation(
             num_card_per_player,
@@ -392,11 +530,7 @@ class BigTwo:
 
     def _apply_action(self, action) -> Tuple[BigTwoObservation, int, bool]:
         self.state.append((self.current_player, action))
-
-        self.player_hands[self.current_player] = BigTwo.remove_card_from_hand(
-            action,
-            self.player_hands[self.current_player]
-        )
+        self.player_hands[self.current_player].remove_cards(action)
 
         previous_player = self.current_player
         self.current_player += 1
@@ -409,3 +543,7 @@ class BigTwo:
         if game_finished:
             reward = 100
         return self._current_observation(previous_player), reward, game_finished
+
+    def __create_player_hand(self) -> List[BigTwoHand]:
+        hands = Deck().shuffle_and_split(self.number_of_players())
+        return [BigTwoHand(hand) for hand in hands]
