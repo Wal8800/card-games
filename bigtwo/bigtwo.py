@@ -19,6 +19,11 @@ class BigTwoHand(MutableSequence):
     def __init__(self, cards: List[Card]):
         self.cards = cards
 
+        self.pairs: List[Tuple[Card]] = []
+        for pair in itertools.combinations(self.cards, 2):
+            if BigTwo.is_valid_card_combination(list(pair)):
+                self.pairs.append(pair)
+
         self.combinations: Dict[int, List[Tuple[Card]]] = {}
         for combination in itertools.combinations(self.cards, 5):
             try:
@@ -43,6 +48,10 @@ class BigTwoHand(MutableSequence):
         for card in to_remove:
             self.cards.remove(card)
             self.__remove_combinations(card)
+            self.__remove_pairs(card)
+
+    def __remove_pairs(self, target: Card):
+        self.pairs = [pair for pair in self.pairs if target not in pair]
 
     def __remove_combinations(self, target: Card):
         c_types = list(self.combinations.keys())
@@ -357,7 +366,7 @@ class BigTwo:
             if self.current_player > self.number_of_players() - 1:
                 self.current_player = 0
 
-            return self._current_observation(previous_player), 1, False
+            return self._current_observation(previous_player), 0, False
 
         if not BigTwo.is_valid_card_combination(action):
             return self._current_observation(self.current_player), -1, False
@@ -538,10 +547,10 @@ class BigTwo:
             self.current_player = 0
         self.player_last_played = previous_player
 
-        reward = 1
+        reward = len(action) ** 2
         game_finished = len(self.player_hands[previous_player]) == 0
         if game_finished:
-            reward = 100
+            reward += 100
         return self._current_observation(previous_player), reward, game_finished
 
     def __create_player_hand(self) -> List[BigTwoHand]:

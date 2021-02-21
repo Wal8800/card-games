@@ -2,7 +2,8 @@ run_random:
 	PYTHONPATH=$(shell pwd) python3 gamerunner/random_runner.py
 
 lint:
-    pylint ./bigtwo
+	pylint ./bigtwo \
+	pylint ./playingcards
 
 setup:
 	sudo apt-get update \
@@ -11,4 +12,4 @@ setup:
 	pip3 install -r requirement.txt
 
 update_package:
-    pip install git+ssh://git@github.com/Wal8800/gym-playground.git@0.2.0
+	pip install git+ssh://git@github.com/Wal8800/gym-playground.git@0.3.0

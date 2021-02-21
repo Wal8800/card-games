@@ -1,6 +1,6 @@
 import unittest
 
-from bigtwo import BigTwo, BigTwoHand
+from bigtwo.bigtwo import BigTwo, BigTwoHand
 from playingcards.card import Card, Suit, Rank
 
 
@@ -657,6 +657,39 @@ class TestBigTwo(unittest.TestCase):
 
         self.assertFalse(playable)
 
+    def test_calculate_valid_pairs(self):
+        cards = [
+            Card(Suit.spades, Rank.two),
+            Card(Suit.spades, Rank.ten),
+            Card(Suit.hearts, Rank.ten),
+            Card(Suit.clubs, Rank.two)
+        ]
 
-if __name__ == '__main__':
-    unittest.main()
+        hand = BigTwoHand(cards)
+
+        self.assertEqual(len(hand.pairs), 2)
+        self.assertIn((Card(Suit.spades, Rank.two), Card(Suit.clubs, Rank.two)), hand.pairs)
+        self.assertIn((Card(Suit.spades, Rank.ten), Card(Suit.hearts, Rank.ten)), hand.pairs)
+
+    def test_calculate_remove_valid_pairs(self):
+        cards = [
+            Card(Suit.spades, Rank.two),
+            Card(Suit.spades, Rank.ten),
+            Card(Suit.hearts, Rank.ten),
+            Card(Suit.clubs, Rank.two)
+        ]
+
+        hand = BigTwoHand(cards)
+
+        self.assertEqual(len(hand.pairs), 2)
+        self.assertIn((Card(Suit.spades, Rank.two), Card(Suit.clubs, Rank.two)), hand.pairs)
+        self.assertIn((Card(Suit.spades, Rank.ten), Card(Suit.hearts, Rank.ten)), hand.pairs)
+
+        hand.remove_cards([Card(Suit.spades, Rank.two)])
+
+        self.assertEqual(len(hand.pairs), 1)
+
+        self.assertIn((Card(Suit.spades, Rank.ten), Card(Suit.hearts, Rank.ten)), hand.pairs)
+
+        if __name__ == '__main__':
+            unittest.main()
