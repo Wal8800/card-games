@@ -64,6 +64,9 @@ class Card:
             return self.suit == other.suit and self.rank == other.rank
         return False
 
+    def __hash__(self):
+        return hash(self.__repr__())
+
     @staticmethod
     def from_number(number: int):
         if not 0 <= number <= 51:

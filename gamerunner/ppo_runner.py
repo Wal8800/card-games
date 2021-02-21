@@ -1,15 +1,15 @@
+import itertools
 import logging
 import sys
 import time
 from collections import Counter
-from typing import Dict, List
+from typing import Dict, List, Tuple
 
 import numpy as np
 import seaborn as sns
 from algorithm.agent import PPOAgent, discounted_sum_of_rewards, get_mlp_vf, get_mlp_policy
 
-from bigtwo import BigTwo
-from bigtwo.bigtwo import BigTwoObservation
+from bigtwo.bigtwo import BigTwoObservation, BigTwo, BigTwoHand
 from playingcards.card import Card
 
 FORMATTER = logging.Formatter("%(asctime)s — %(name)s — %(levelname)s — %(message)s")
@@ -47,13 +47,15 @@ class PlayerBuffer:
         self.rew_buf = []
         self.ret_buf = []
         self.logp_buf = []
+        self.mask_buf = []
         self.gamma, self.lam = gamma, lam
 
-    def store(self, obs, act, rew, logp):
+    def store(self, obs, act, rew, logp, mask):
         self.obs_buf.append(obs)
         self.act_buf.append(act)
         self.rew_buf.append(rew)
         self.logp_buf.append(logp)
+        self.mask_buf.append(mask)
 
     def get_curr_path(self):
         return np.array(self.obs_buf)
@@ -82,6 +84,7 @@ class GameBuffer:
         self.rew_buf = None
         self.ret_buf = None
         self.logp_buf = None
+        self.mask_buf = None
 
     def add(self, pbuf: PlayerBuffer):
         self.obs_buf = np.array(pbuf.obs_buf) if self.obs_buf is None else np.append(self.obs_buf, pbuf.obs_buf, axis=0)
@@ -90,6 +93,8 @@ class GameBuffer:
         self.rew_buf = np.array(pbuf.rew_buf) if self.rew_buf is None else np.append(self.rew_buf, pbuf.rew_buf, axis=0)
         self.ret_buf = pbuf.ret_buf if self.ret_buf is None else np.append(self.ret_buf, pbuf.ret_buf, axis=0)
         self.logp_buf = np.array(pbuf.logp_buf) if self.logp_buf is None else np.append(self.logp_buf, pbuf.logp_buf,
+                                                                                        axis=0)
+        self.mask_buf = np.array(pbuf.mask_buf) if self.mask_buf is None else np.append(self.mask_buf, pbuf.mask_buf,
                                                                                         axis=0)
 
     def get(self):
@@ -124,24 +129,93 @@ def get_logger(logger_name, log_level):
     return logger
 
 
-def save_prob_plot(obs: BigTwoObservation, action_cat_mapping, bot, filename: str) -> None:
-    prob_frequency = {}
-    total_prob = 0
-    obs_array = obs_to_np_array(obs)
-    for action_cat, raw_action in action_cat_mapping.items():
-        num_of_cards = sum(raw_action)
-
-        probs = bot.prob(obs_array, action_cat)
-
-        prob_frequency[num_of_cards] = prob_frequency.get(num_of_cards, 0) + probs
-        total_prob += probs
-
-    ax = sns.barplot(x=list(prob_frequency.keys()), y=list(prob_frequency.values()))
+def save_ep_returns_plot(values) -> None:
+    ax = sns.lineplot(data=values)
     figure = ax.get_figure()
-    figure.savefig(f"./plots/{filename}.png", dpi=400)
+    figure.savefig(f"./plots/ppo_runner_ep_returns.png", dpi=400)
 
 
-def train(batch_size=4000, epoch=50):
+def create_action_cat_mapping(num_cards_in_hand=13) -> Tuple[Dict[int, List[int]], Dict[frozenset, int]]:
+    """
+    :param num_cards_in_hand:
+    :return: a map of category to raw action (one hot encoded) and also a map for reverese lookup of indices to category
+    """
+    result = {}
+    cat = 0
+    reverse_lookup = {}
+
+    # skip action
+    result[cat] = [0] * num_cards_in_hand
+    cat += 1
+
+    # play single card action
+    for i in range(num_cards_in_hand):
+        temp = [0] * num_cards_in_hand
+        temp[i] = 1
+        result[cat] = temp
+
+        reverse_lookup[frozenset([i])] = cat
+        cat += 1
+
+    # play double card action
+    for pair_idx in itertools.combinations(range(num_cards_in_hand), 2):
+        temp = [0] * num_cards_in_hand
+        temp[pair_idx[0]] = 1
+        temp[pair_idx[1]] = 1
+        reverse_lookup[frozenset(pair_idx)] = cat
+        result[cat] = temp
+        cat += 1
+
+    # play combinations action
+    for comb_idx in itertools.combinations(range(num_cards_in_hand), 5):
+        temp = [0] * num_cards_in_hand
+        reverse_lookup[frozenset(comb_idx)] = cat
+        for idx in comb_idx:
+            temp[idx] = 1
+        result[cat] = temp
+        cat += 1
+
+    return result, reverse_lookup
+
+
+def generate_action_mask(act_cat_mapping: Dict[int, List[int]], idx_cat_mapping, player_hand: BigTwoHand) -> np.array:
+    result = np.full(len(act_cat_mapping), False)
+
+    result[0] = True
+
+    card_idx_mapping = {}
+    for idx in range(len(player_hand)):
+        cat = idx_cat_mapping[frozenset([idx])]
+        card_idx_mapping[player_hand[idx]] = idx
+        result[cat] = True
+
+    if len(player_hand) < 2:
+        return result
+
+    for pair in player_hand.pairs:
+        pair_idx = []
+        for card in pair:
+            pair_idx.append(card_idx_mapping.get(card))
+
+        cat = idx_cat_mapping[frozenset(pair_idx)]
+        result[cat] = True
+
+    if len(player_hand) < 5:
+        return result
+
+    for _, combinations in player_hand.combinations.items():
+        for comb in combinations:
+            comb_idx = []
+            for card in comb:
+                comb_idx.append(card_idx_mapping.get(card))
+
+            cat = idx_cat_mapping[frozenset(comb_idx)]
+            result[cat] = True
+
+    return result
+
+
+def train_serialise(batch_size=4000, epoch=50):
     train_logger = get_logger("train_ppo", log_level=logging.INFO)
     env = BigTwo()
 
@@ -149,25 +223,13 @@ def train(batch_size=4000, epoch=50):
     result = obs_to_np_array(obs)
 
     # numer of possible actions picking combination from 13 cards.
-    total_num_of_actions = 2 ** 13
-    action_cat_mapping = {}
-    cat = 0
-    for i in range(total_num_of_actions):
-        action = int_to_binary_array(i)
+    action_cat_mapping, idx_cat_mapping = create_action_cat_mapping()
 
-        if sum(action) > 5:
-            continue
+    lr = 0.001
+    bot = PPOAgent(get_mlp_policy(result.shape, len(action_cat_mapping)), get_mlp_vf(result.shape), "BigTwo",
+                   policy_lr=lr, value_lr=lr)
 
-        if sum(action) == 3 or sum(action) == 4:
-            continue
-
-        action_cat_mapping[cat] = action
-        cat += 1
-
-    bot = PPOAgent(get_mlp_policy(result.shape, len(action_cat_mapping.keys())), get_mlp_vf(result.shape), "BigTwo",
-                   policy_lr=0.001, value_lr=0.001)
-
-    episode_step = 0
+    ep_returns = []
     for i_episode in range(epoch):
         # make some empty lists for logging.
         batch_lens, batch_rets, batch_hands_played, batch_games_played = [], [], [], 0  # for measuring episode lengths
@@ -181,15 +243,11 @@ def train(batch_size=4000, epoch=50):
         for t in range(batch_size):
             obs = env.get_current_player_obs()
 
-            before_play_summary = f"turn: {episode_step}" \
-                                  f"current_player: {obs.current_player}" \
-                                  f"before player hand: {obs.your_hands}" \
-                                  f"last_player_played: {obs.last_player_played}" \
-                                  f"cards played: {obs.last_cards_played}"
-            train_logger.debug(before_play_summary)
-
             obs_array = obs_to_np_array(obs)
-            action_cat, logp = bot.action(obs_array)
+
+            action_mask = generate_action_mask(action_cat_mapping, idx_cat_mapping, obs.your_hands)
+
+            action_cat, logp = bot.action(obs_array, action_mask)
             action = action_cat_mapping[action_cat]
 
             num_of_cards = sum(action)
@@ -199,13 +257,7 @@ def train(batch_size=4000, epoch=50):
             player_ep_rews[obs.current_player].append(reward)
 
             # storing the trajectory per players because the awards is per player not sum of all players.
-            player_buf[obs.current_player].store(obs_array, action_cat, reward, logp)
-            episode_step += 1
-
-            after_play_summary = f"action: {action}" \
-                                 f"after player hand: {new_obs.your_hands}" \
-                                 f"===="
-            train_logger.debug(after_play_summary)
+            player_buf[obs.current_player].store(obs_array, action_cat, reward, logp, action_mask)
 
             epoch_ended = t == batch_size - 1
             if done or epoch_ended:
@@ -244,9 +296,6 @@ def train(batch_size=4000, epoch=50):
                 player_buf = create_player_buf()
                 player_ep_rews = create_player_rew_buf()
 
-                if epoch_ended and i_episode % 10 == 0:
-                    save_prob_plot(reset_obs, action_cat_mapping, bot, f"epoch_{i_episode}_ended_reset_probs")
-
         sample_time_taken = time.time() - sample_start_time
 
         update_start_time = time.time()
@@ -265,11 +314,14 @@ def train(batch_size=4000, epoch=50):
         train_logger.info(epoch_summary)
         train_logger.info(f"num_of_cards_played_summary: {Counter(num_of_cards_played).most_common()}")
 
+        ep_returns.append(np.mean(batch_rets))
         for game in game_history[:5]:
             train_logger.info(game)
+
+    save_ep_returns_plot(ep_returns)
 
 
 if __name__ == '__main__':
     start_time = time.time()
-    train(epoch=100)
+    train_serialise(epoch=120)
     print(f"Time taken: {time.time() - start_time:.3f} seconds")
