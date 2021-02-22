@@ -240,6 +240,8 @@ def train_serialise(batch_size=4000, epoch=50):
         num_of_cards_played, game_history = [], []
         buf = GameBuffer()
         sample_start_time = time.time()
+
+        events_counter = Counter({})
         for t in range(batch_size):
             obs = env.get_current_player_obs()
 
@@ -291,6 +293,8 @@ def train_serialise(batch_size=4000, epoch=50):
                 batch_rets.append(ep_ret)
                 batch_lens.append(ep_len)
 
+                events_counter += Counter(env.event_count)
+
                 # reset game
                 reset_obs = env.reset()
                 player_buf = create_player_buf()
@@ -318,10 +322,12 @@ def train_serialise(batch_size=4000, epoch=50):
         for game in game_history[:5]:
             train_logger.info(game)
 
+        train_logger.info(f"event counter: {events_counter}")
+
     save_ep_returns_plot(ep_returns)
 
 
 if __name__ == '__main__':
     start_time = time.time()
-    train_serialise(epoch=120)
+    train_serialise(epoch=60)
     print(f"Time taken: {time.time() - start_time:.3f} seconds")
