@@ -213,7 +213,8 @@ class BigTwo:
 
     @staticmethod
     def is_straight(cards: List[Card]) -> bool:
-        cards = sorted(cards, key=lambda c: BigTwo.rank_order()[c.rank])
+        rank_order = BigTwo.rank_order()
+        cards = sorted(cards, key=lambda c: rank_order[c.rank])
 
         """
         special case:
@@ -225,8 +226,8 @@ class BigTwo:
             card_one = cards[x - 1]
             card_two = cards[x]
 
-            card_one_order = BigTwo.rank_order()[card_one.rank]
-            card_two_order = BigTwo.rank_order()[card_two.rank]
+            card_one_order = rank_order[card_one.rank]
+            card_two_order = rank_order[card_two.rank]
 
             # special case, can ignore
             if card_one.rank == Rank.five and card_two.rank == Rank.ace or \
