@@ -1,12 +1,15 @@
 import itertools
 import logging
+import multiprocessing as mp
 import sys
 import time
 from collections import Counter
+from multiprocessing import Pool, Queue, Process
 from typing import Dict, List, Tuple
 
 import numpy as np
 import seaborn as sns
+import tensorflow as tf
 from algorithm.agent import PPOAgent, discounted_sum_of_rewards, get_mlp_vf, get_mlp_policy
 
 from bigtwo.bigtwo import BigTwoObservation, BigTwo, BigTwoHand
@@ -83,9 +86,9 @@ class SampleMetric:
         self.batch_lens = []
         self.batch_rets = []
         self.batch_hands_played = []
-        self.batch_games_played = 0
         self.num_of_cards_played = []
         self.game_history = []
+        self.batch_games_played = 0
 
     def track_action(self, action):
         num_of_cards = sum(action)
@@ -104,6 +107,20 @@ class SampleMetric:
     def track_rewards(self, ep_ret, ep_len):
         self.batch_rets.append(ep_ret)
         self.batch_lens.append(ep_len)
+
+
+def config_gpu():
+    gpus = tf.config.list_physical_devices('GPU')
+    if gpus:
+        try:
+            # Currently, memory growth needs to be the same across GPUs
+            for gpu in gpus:
+                tf.config.experimental.set_memory_growth(gpu, True)
+            logical_gpus = tf.config.experimental.list_logical_devices('GPU')
+            print(len(gpus), "Physical GPUs,", len(logical_gpus), "Logical GPUs")
+        except RuntimeError as e:
+            # Memory growth must be set before GPUs have been initialized
+            print(e)
 
 
 def obs_to_np_array(obs: BigTwoObservation) -> np.ndarray:
@@ -298,11 +315,25 @@ def generate_action_mask(act_cat_mapping: Dict[int, List[int]], idx_cat_mapping,
     return result
 
 
-def collect_data_from_env(bot, buffer_size=4000) -> Tuple[GameBuffer, SampleMetric]:
+def sample_worker(input: Queue, output: Queue):
+    config_gpu()
+
+    for policy_weight, value_weight, buffer_size in iter(input.get, 'STOP'):
+        buf, m = collect_data_from_env(policy_weight, value_weight, buffer_size)
+        output.put((buf, m))
+
+
+def collect_data_from_env(policy_weight, value_weight, buffer_size=4000) -> Tuple[GameBuffer, SampleMetric]:
     env = BigTwo()
+
+    obs = env.reset()
+    result = obs_to_ohe_np_array(obs)
 
     # numer of possible actions picking combination from 13 cards.
     action_cat_mapping, idx_cat_mapping = create_action_cat_mapping()
+
+    bot = PPOAgent(get_mlp_policy(result.shape, len(action_cat_mapping)), get_mlp_vf(result.shape), "BigTwo")
+    bot.set_weights(policy_weight, value_weight)
 
     player_buf = create_player_buf()
     player_ep_rews = create_player_rew_buf()
@@ -360,7 +391,36 @@ def collect_data_from_env(bot, buffer_size=4000) -> Tuple[GameBuffer, SampleMetr
     return buf, sample_metric
 
 
-def train_serialise(epoch=50):
+def create_worker_task(num_cpu, policy_weight, value_weight, buffer_size):
+    chunk_buffer_size = buffer_size // num_cpu
+
+    args = zip(
+        itertools.repeat(policy_weight, num_cpu),
+        itertools.repeat(value_weight, num_cpu),
+        itertools.repeat(chunk_buffer_size, num_cpu)
+    )
+
+    return args
+
+
+def collect_data_parallel(policy_weight, value_weight, buffer_size=4000) -> Tuple[GameBuffer, SampleMetric]:
+    num_cpu = 4
+
+    chunk_buffer_size = buffer_size // num_cpu
+
+    args = list(zip(
+        itertools.repeat(policy_weight, num_cpu),
+        itertools.repeat(value_weight, num_cpu),
+        itertools.repeat(chunk_buffer_size, num_cpu)
+    ))
+
+    with Pool(processes=4) as pool:
+        result: List[Tuple[GameBuffer, SampleMetric]] = pool.starmap(collect_data_from_env, args)
+
+    return result[0][0], result[0][1]
+
+
+def train(epoch=50):
     train_logger = get_logger("train_ppo", log_level=logging.INFO)
     env = BigTwo()
 
@@ -377,7 +437,10 @@ def train_serialise(epoch=50):
     ep_returns = []
     for i_episode in range(epoch):
         sample_start_time = time.time()
-        buf, m = collect_data_from_env(bot)
+
+        policy_weight, value_weight = bot.get_weights()
+
+        buf, m = collect_data_from_env(policy_weight, value_weight)
 
         sample_time_taken = time.time() - sample_start_time
 
@@ -406,6 +469,106 @@ def train_serialise(epoch=50):
     # save_ep_returns_plot(ep_returns)
 
 
+def merge_result(results: List[Tuple[GameBuffer, SampleMetric]]) -> Tuple[GameBuffer, SampleMetric]:
+    result_buf, result_metric = None, None
+
+    for buf, m in results:
+        if result_buf is None:
+            result_buf = buf
+            result_metric = m
+            continue
+
+        result_buf.obs_buf = np.append(result_buf.obs_buf, buf.obs_buf, axis=0)
+        result_buf.act_buf = np.append(result_buf.act_buf, buf.act_buf, axis=0)
+        result_buf.adv_buf = np.append(result_buf.adv_buf, buf.adv_buf, axis=0)
+        result_buf.rew_buf = np.append(result_buf.rew_buf, buf.rew_buf, axis=0)
+        result_buf.ret_buf = np.append(result_buf.ret_buf, buf.ret_buf, axis=0)
+        result_buf.logp_buf = np.append(result_buf.logp_buf, buf.logp_buf, axis=0)
+        result_buf.mask_buf = np.append(result_buf.mask_buf, buf.mask_buf, axis=0)
+
+        result_metric.events_counter += m.events_counter
+        result_metric.batch_lens += m.batch_lens
+        result_metric.batch_rets += m.batch_rets
+        result_metric.batch_hands_played += m.batch_hands_played
+        result_metric.num_of_cards_played += m.num_of_cards_played
+        result_metric.game_history += m.game_history
+        result_metric.batch_games_played += m.batch_games_played
+
+    return result_buf, result_metric
+
+
+def train_parallel(epoch=50, buffer_size=4000):
+    mp.set_start_method('spawn')
+
+    # setting up worker for sampling
+    NUMBER_OF_PROCESSES = 10
+    task_queue = Queue()
+    done_queue = Queue()
+
+    # Start worker processes
+    for i in range(NUMBER_OF_PROCESSES):
+        Process(target=sample_worker, args=(task_queue, done_queue)).start()
+
+    train_logger = get_logger("train_ppo", log_level=logging.INFO)
+    env = BigTwo()
+
+    obs = env.reset()
+    result = obs_to_ohe_np_array(obs)
+
+    # numer of possible actions picking combination from 13 cards.
+    action_cat_mapping, idx_cat_mapping = create_action_cat_mapping()
+
+    lr = 0.001
+    bot = PPOAgent(get_mlp_policy(result.shape, len(action_cat_mapping)), get_mlp_vf(result.shape), "BigTwo",
+                   policy_lr=lr, value_lr=lr)
+
+    ep_returns = []
+    for i_episode in range(epoch):
+        sample_start_time = time.time()
+
+        policy_weight, value_weight = bot.get_weights()
+
+        tasks = create_worker_task(NUMBER_OF_PROCESSES, policy_weight, value_weight, buffer_size)
+        for task in tasks:
+            task_queue.put(task)
+
+        result: List[Tuple[GameBuffer, SampleMetric]] = []
+        for i in range(NUMBER_OF_PROCESSES):
+            result.append(done_queue.get())
+
+        buf, m = merge_result(result)
+        sample_time_taken = time.time() - sample_start_time
+
+        update_start_time = time.time()
+        policy_loss, value_loss = bot.update(buf, mini_batch_size=512)
+
+        update_time_taken = time.time() - update_start_time
+
+        epoch_summary = f"epoch: {i_episode + 1}, policy_loss: {policy_loss:.3f}, " \
+                        f"value_loss: {value_loss:.3f}, " \
+                        f"return: {np.mean(m.batch_rets):.3f}, " \
+                        f"ep_len: {np.mean(m.batch_lens):.3f} " \
+                        f"ep_hands_played: {np.mean(m.batch_hands_played):.3f} " \
+                        f"ep_games_played: {m.batch_games_played} " \
+                        f"time to sample: {sample_time_taken} " \
+                        f"time to update network: {update_time_taken}"
+        train_logger.info(epoch_summary)
+        train_logger.info(f"num_of_cards_played_summary: {Counter(m.num_of_cards_played).most_common()}")
+
+        ep_returns.append(np.mean(m.batch_rets))
+        for game in m.game_history[:5]:
+            train_logger.info(game)
+
+        train_logger.info(f"event counter: {m.events_counter}")
+
+    save_ep_returns_plot(ep_returns)
+
+    # Tell child processes to stop
+    for i in range(NUMBER_OF_PROCESSES):
+        task_queue.put('STOP')
+
+
 if __name__ == '__main__':
-    train_serialise(epoch=1)
+    config_gpu()
+    train_parallel(epoch=100)
     # print(f"Time taken: {time.time() - start_time:.3f} seconds")
