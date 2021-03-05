@@ -177,6 +177,24 @@ def obs_to_ohe_np_array(obs: BigTwoObservation) -> np.ndarray:
     data = []
     data += obs.num_card_per_player
 
+    # first turn
+    data.append(1 if len(obs.last_cards_played) == 0 else 0)
+
+    # current player number
+    current_player_number = [0, 0, 0, 0]
+    current_player_number[obs.current_player] = 1
+
+    data += current_player_number
+
+    # last player number
+    last_player_number = [0, 0, 0, 0]
+    if obs.last_player_played <= 4:
+        last_player_number[obs.last_player_played] = 1
+    data += last_player_number
+
+    # cards length
+    data.append(len(obs.last_cards_played))
+
     for i in range(5):
         # add place holder for empty card
         if i >= len(obs.last_cards_played):
@@ -331,7 +349,7 @@ def collect_data_from_env(policy_weight, value_weight, buffer_size=4000) -> Tupl
 
     # numer of possible actions picking combination from 13 cards.
     action_cat_mapping, idx_cat_mapping = create_action_cat_mapping()
-
+    n_action = len(action_cat_mapping)
     bot = PPOAgent(get_mlp_policy(result.shape, len(action_cat_mapping)), get_mlp_vf(result.shape), "BigTwo")
     bot.set_weights(policy_weight, value_weight)
 
@@ -347,7 +365,11 @@ def collect_data_from_env(policy_weight, value_weight, buffer_size=4000) -> Tupl
         obs_array = obs_to_ohe_np_array(obs)
 
         action_mask = generate_action_mask(action_cat_mapping, idx_cat_mapping, obs.your_hands)
-        action_cat, logp = bot.action(obs_array, action_mask)
+
+        action_tensor, logp_tensor = bot.action(obs=obs_array, n_action=n_action, mask=action_mask)
+        action_cat = action_tensor.numpy()
+        logp = logp_tensor.numpy()
+
         action = action_cat_mapping[action_cat]
 
         sample_metric.track_action(action)
@@ -491,7 +513,7 @@ def merge_result(results: List[Tuple[GameBuffer, SampleMetric]]) -> Tuple[GameBu
         result_metric.batch_rets += m.batch_rets
         result_metric.batch_hands_played += m.batch_hands_played
         result_metric.num_of_cards_played += m.num_of_cards_played
-        result_metric.game_history += m.game_history
+        result_metric.game_history += [h for h in m.game_history if len(h) > 0]
         result_metric.batch_games_played += m.batch_games_played
 
     return result_buf, result_metric
@@ -561,7 +583,7 @@ def train_parallel(epoch=50, buffer_size=4000):
 
         train_logger.info(f"event counter: {m.events_counter}")
 
-    save_ep_returns_plot(ep_returns)
+    # save_ep_returns_plot(ep_returns)
 
     # Tell child processes to stop
     for i in range(NUMBER_OF_PROCESSES):
@@ -570,5 +592,6 @@ def train_parallel(epoch=50, buffer_size=4000):
 
 if __name__ == '__main__':
     config_gpu()
-    train_parallel(epoch=100)
-    # print(f"Time taken: {time.time() - start_time:.3f} seconds")
+    start_time = time.time()
+    train_parallel(epoch=3)
+    print(f"Time taken: {time.time() - start_time:.3f} seconds")
