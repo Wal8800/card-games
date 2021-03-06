@@ -10,9 +10,15 @@ from typing import Dict, List, Tuple
 import numpy as np
 import seaborn as sns
 import tensorflow as tf
-from algorithm.agent import PPOAgent, discounted_sum_of_rewards, get_mlp_vf, get_mlp_policy
+from algorithm.agent import (
+    PPOAgent,
+    discounted_sum_of_rewards,
+    get_mlp_vf,
+    get_mlp_policy,
+)
 
 from bigtwo.bigtwo import BigTwoObservation, BigTwo, BigTwoHand
+from gamerunner.cmd_line_bot import CommandLineBot
 from playingcards.card import Card, Suit, Rank
 
 FORMATTER = logging.Formatter("%(asctime)s — %(name)s — %(levelname)s — %(message)s")
@@ -66,18 +72,50 @@ class GameBuffer:
         self.mask_buf = None
 
     def add(self, pbuf: PlayerBuffer):
-        self.obs_buf = np.array(pbuf.obs_buf) if self.obs_buf is None else np.append(self.obs_buf, pbuf.obs_buf, axis=0)
-        self.act_buf = np.array(pbuf.act_buf) if self.act_buf is None else np.append(self.act_buf, pbuf.act_buf, axis=0)
-        self.adv_buf = pbuf.adv_buf if self.adv_buf is None else np.append(self.adv_buf, pbuf.adv_buf, axis=0)
-        self.rew_buf = np.array(pbuf.rew_buf) if self.rew_buf is None else np.append(self.rew_buf, pbuf.rew_buf, axis=0)
-        self.ret_buf = pbuf.ret_buf if self.ret_buf is None else np.append(self.ret_buf, pbuf.ret_buf, axis=0)
-        self.logp_buf = np.array(pbuf.logp_buf) if self.logp_buf is None else np.append(self.logp_buf, pbuf.logp_buf,
-                                                                                        axis=0)
-        self.mask_buf = np.array(pbuf.mask_buf) if self.mask_buf is None else np.append(self.mask_buf, pbuf.mask_buf,
-                                                                                        axis=0)
+        self.obs_buf = (
+            np.array(pbuf.obs_buf)
+            if self.obs_buf is None
+            else np.append(self.obs_buf, pbuf.obs_buf, axis=0)
+        )
+        self.act_buf = (
+            np.array(pbuf.act_buf)
+            if self.act_buf is None
+            else np.append(self.act_buf, pbuf.act_buf, axis=0)
+        )
+        self.adv_buf = (
+            pbuf.adv_buf
+            if self.adv_buf is None
+            else np.append(self.adv_buf, pbuf.adv_buf, axis=0)
+        )
+        self.rew_buf = (
+            np.array(pbuf.rew_buf)
+            if self.rew_buf is None
+            else np.append(self.rew_buf, pbuf.rew_buf, axis=0)
+        )
+        self.ret_buf = (
+            pbuf.ret_buf
+            if self.ret_buf is None
+            else np.append(self.ret_buf, pbuf.ret_buf, axis=0)
+        )
+        self.logp_buf = (
+            np.array(pbuf.logp_buf)
+            if self.logp_buf is None
+            else np.append(self.logp_buf, pbuf.logp_buf, axis=0)
+        )
+        self.mask_buf = (
+            np.array(pbuf.mask_buf)
+            if self.mask_buf is None
+            else np.append(self.mask_buf, pbuf.mask_buf, axis=0)
+        )
 
     def get(self):
-        return self.obs_buf, self.act_buf, self.adv_buf, self.ret_buf, self.logp_buf
+        return (
+            self.obs_buf,
+            self.act_buf,
+            self.adv_buf.astype("float32"),
+            self.ret_buf.astype("float32"),
+            self.logp_buf,
+        )
 
 
 class SampleMetric:
@@ -110,13 +148,13 @@ class SampleMetric:
 
 
 def config_gpu():
-    gpus = tf.config.list_physical_devices('GPU')
+    gpus = tf.config.list_physical_devices("GPU")
     if gpus:
         try:
             # Currently, memory growth needs to be the same across GPUs
             for gpu in gpus:
                 tf.config.experimental.set_memory_growth(gpu, True)
-            logical_gpus = tf.config.experimental.list_logical_devices('GPU')
+            logical_gpus = tf.config.experimental.list_logical_devices("GPU")
             print(len(gpus), "Physical GPUs,", len(logical_gpus), "Logical GPUs")
         except RuntimeError as e:
             # Memory growth must be set before GPUs have been initialized
@@ -152,7 +190,7 @@ def obs_to_ohe_np_array(obs: BigTwoObservation) -> np.ndarray:
         Suit.spades: [0, 0, 0, 1],
         Suit.hearts: [0, 0, 1, 0],
         Suit.clubs: [0, 1, 0, 0],
-        Suit.diamond: [1, 0, 0, 0]
+        Suit.diamond: [1, 0, 0, 0],
     }
 
     rank_ohe = {
@@ -229,7 +267,7 @@ def create_player_rew_buf(num_of_player=4) -> Dict[int, List[int]]:
 
 def int_to_binary_array(v: int) -> List[int]:
     result = []
-    for c in '{0:013b}'.format(v):
+    for c in "{0:013b}".format(v):
         result.append(int(c))
     return result
 
@@ -253,7 +291,9 @@ def save_ep_returns_plot(values) -> None:
     figure.savefig(f"./plots/ppo_runner_ep_returns.png", dpi=400)
 
 
-def create_action_cat_mapping(num_cards_in_hand=13) -> Tuple[Dict[int, List[int]], Dict[frozenset, int]]:
+def create_action_cat_mapping(
+    num_cards_in_hand=13,
+) -> Tuple[Dict[int, List[int]], Dict[frozenset, int]]:
     """
     :param num_cards_in_hand:
     :return: a map of category to raw action (one hot encoded) and also a map for reverese lookup of indices to category
@@ -296,7 +336,9 @@ def create_action_cat_mapping(num_cards_in_hand=13) -> Tuple[Dict[int, List[int]
     return result, reverse_lookup
 
 
-def generate_action_mask(act_cat_mapping: Dict[int, List[int]], idx_cat_mapping, player_hand: BigTwoHand) -> np.array:
+def generate_action_mask(
+    act_cat_mapping: Dict[int, List[int]], idx_cat_mapping, player_hand: BigTwoHand
+) -> np.array:
     result = np.full(len(act_cat_mapping), False)
 
     result[0] = True
@@ -336,12 +378,14 @@ def generate_action_mask(act_cat_mapping: Dict[int, List[int]], idx_cat_mapping,
 def sample_worker(input: Queue, output: Queue):
     config_gpu()
 
-    for policy_weight, value_weight, buffer_size in iter(input.get, 'STOP'):
+    for policy_weight, value_weight, buffer_size in iter(input.get, "STOP"):
         buf, m = collect_data_from_env(policy_weight, value_weight, buffer_size)
         output.put((buf, m))
 
 
-def collect_data_from_env(policy_weight, value_weight, buffer_size=4000) -> Tuple[GameBuffer, SampleMetric]:
+def collect_data_from_env(
+    policy_weight, value_weight, buffer_size=4000
+) -> Tuple[GameBuffer, SampleMetric]:
     env = BigTwo()
 
     obs = env.reset()
@@ -350,7 +394,12 @@ def collect_data_from_env(policy_weight, value_weight, buffer_size=4000) -> Tupl
     # numer of possible actions picking combination from 13 cards.
     action_cat_mapping, idx_cat_mapping = create_action_cat_mapping()
     n_action = len(action_cat_mapping)
-    bot = PPOAgent(get_mlp_policy(result.shape, len(action_cat_mapping)), get_mlp_vf(result.shape), "BigTwo")
+    bot = PPOAgent(
+        get_mlp_policy(result.shape, n_action),
+        get_mlp_vf(result.shape),
+        "BigTwo",
+        n_action,
+    )
     bot.set_weights(policy_weight, value_weight)
 
     player_buf = create_player_buf()
@@ -364,9 +413,11 @@ def collect_data_from_env(policy_weight, value_weight, buffer_size=4000) -> Tupl
         obs = env.get_current_player_obs()
         obs_array = obs_to_ohe_np_array(obs)
 
-        action_mask = generate_action_mask(action_cat_mapping, idx_cat_mapping, obs.your_hands)
+        action_mask = generate_action_mask(
+            action_cat_mapping, idx_cat_mapping, obs.your_hands
+        )
 
-        action_tensor, logp_tensor = bot.action(obs=obs_array, n_action=n_action, mask=action_mask)
+        action_tensor, logp_tensor = bot.action(obs=obs_array, mask=action_mask)
         action_cat = action_tensor.numpy()
         logp = logp_tensor.numpy()
 
@@ -378,7 +429,9 @@ def collect_data_from_env(policy_weight, value_weight, buffer_size=4000) -> Tupl
 
         # storing the trajectory per players because the awards is per player not sum of all players.
         player_ep_rews[obs.current_player].append(reward)
-        player_buf[obs.current_player].store(obs_array, action_cat, reward, logp, action_mask)
+        player_buf[obs.current_player].store(
+            obs_array, action_cat, reward, logp, action_mask
+        )
 
         epoch_ended = t == buffer_size - 1
         if done or epoch_ended:
@@ -393,7 +446,9 @@ def collect_data_from_env(policy_weight, value_weight, buffer_size=4000) -> Tupl
                 if player_buf[player_number].is_empty():
                     continue
 
-                estimated_values = bot.predict_value(player_buf[player_number].get_curr_path())
+                estimated_values = bot.predict_value(
+                    player_buf[player_number].get_curr_path()
+                )
                 last_val = 0
                 if not done and epoch_ended:
                     last_obs = env.get_player_obs(player_number)
@@ -419,25 +474,31 @@ def create_worker_task(num_cpu, policy_weight, value_weight, buffer_size):
     args = zip(
         itertools.repeat(policy_weight, num_cpu),
         itertools.repeat(value_weight, num_cpu),
-        itertools.repeat(chunk_buffer_size, num_cpu)
+        itertools.repeat(chunk_buffer_size, num_cpu),
     )
 
     return args
 
 
-def collect_data_parallel(policy_weight, value_weight, buffer_size=4000) -> Tuple[GameBuffer, SampleMetric]:
+def collect_data_parallel(
+    policy_weight, value_weight, buffer_size=4000
+) -> Tuple[GameBuffer, SampleMetric]:
     num_cpu = 4
 
     chunk_buffer_size = buffer_size // num_cpu
 
-    args = list(zip(
-        itertools.repeat(policy_weight, num_cpu),
-        itertools.repeat(value_weight, num_cpu),
-        itertools.repeat(chunk_buffer_size, num_cpu)
-    ))
+    args = list(
+        zip(
+            itertools.repeat(policy_weight, num_cpu),
+            itertools.repeat(value_weight, num_cpu),
+            itertools.repeat(chunk_buffer_size, num_cpu),
+        )
+    )
 
     with Pool(processes=4) as pool:
-        result: List[Tuple[GameBuffer, SampleMetric]] = pool.starmap(collect_data_from_env, args)
+        result: List[Tuple[GameBuffer, SampleMetric]] = pool.starmap(
+            collect_data_from_env, args
+        )
 
     return result[0][0], result[0][1]
 
@@ -451,10 +512,16 @@ def train(epoch=50):
 
     # numer of possible actions picking combination from 13 cards.
     action_cat_mapping, idx_cat_mapping = create_action_cat_mapping()
-
+    n_action = len(action_cat_mapping)
     lr = 0.001
-    bot = PPOAgent(get_mlp_policy(result.shape, len(action_cat_mapping)), get_mlp_vf(result.shape), "BigTwo",
-                   policy_lr=lr, value_lr=lr)
+    bot = PPOAgent(
+        get_mlp_policy(result.shape, n_action),
+        get_mlp_vf(result.shape),
+        "BigTwo",
+        n_action,
+        policy_lr=lr,
+        value_lr=lr,
+    )
 
     ep_returns = []
     for i_episode in range(epoch):
@@ -471,16 +538,20 @@ def train(epoch=50):
 
         update_time_taken = time.time() - update_start_time
 
-        epoch_summary = f"epoch: {i_episode + 1}, policy_loss: {policy_loss:.3f}, " \
-                        f"value_loss: {value_loss:.3f}, " \
-                        f"return: {np.mean(m.batch_rets):.3f}, " \
-                        f"ep_len: {np.mean(m.batch_lens):.3f} " \
-                        f"ep_hands_played: {np.mean(m.batch_hands_played):.3f} " \
-                        f"ep_games_played: {m.batch_games_played} " \
-                        f"time to sample: {sample_time_taken} " \
-                        f"time to update network: {update_time_taken}"
+        epoch_summary = (
+            f"epoch: {i_episode + 1}, policy_loss: {policy_loss:.3f}, "
+            f"value_loss: {value_loss:.3f}, "
+            f"return: {np.mean(m.batch_rets):.3f}, "
+            f"ep_len: {np.mean(m.batch_lens):.3f} "
+            f"ep_hands_played: {np.mean(m.batch_hands_played):.3f} "
+            f"ep_games_played: {m.batch_games_played} "
+            f"time to sample: {sample_time_taken} "
+            f"time to update network: {update_time_taken}"
+        )
         train_logger.info(epoch_summary)
-        train_logger.info(f"num_of_cards_played_summary: {Counter(m.num_of_cards_played).most_common()}")
+        train_logger.info(
+            f"num_of_cards_played_summary: {Counter(m.num_of_cards_played).most_common()}"
+        )
 
         ep_returns.append(np.mean(m.batch_rets))
         for game in m.game_history[:5]:
@@ -491,7 +562,9 @@ def train(epoch=50):
     # save_ep_returns_plot(ep_returns)
 
 
-def merge_result(results: List[Tuple[GameBuffer, SampleMetric]]) -> Tuple[GameBuffer, SampleMetric]:
+def merge_result(
+    results: List[Tuple[GameBuffer, SampleMetric]]
+) -> Tuple[GameBuffer, SampleMetric]:
     result_buf, result_metric = None, None
 
     for buf, m in results:
@@ -520,7 +593,7 @@ def merge_result(results: List[Tuple[GameBuffer, SampleMetric]]) -> Tuple[GameBu
 
 
 def train_parallel(epoch=50, buffer_size=4000):
-    mp.set_start_method('spawn')
+    mp.set_start_method("spawn")
 
     # setting up worker for sampling
     NUMBER_OF_PROCESSES = 10
@@ -535,14 +608,20 @@ def train_parallel(epoch=50, buffer_size=4000):
     env = BigTwo()
 
     obs = env.reset()
-    result = obs_to_ohe_np_array(obs)
+    obs_array = obs_to_ohe_np_array(obs)
 
     # numer of possible actions picking combination from 13 cards.
     action_cat_mapping, idx_cat_mapping = create_action_cat_mapping()
-
+    n_action = len(action_cat_mapping)
     lr = 0.001
-    bot = PPOAgent(get_mlp_policy(result.shape, len(action_cat_mapping)), get_mlp_vf(result.shape), "BigTwo",
-                   policy_lr=lr, value_lr=lr)
+    bot = PPOAgent(
+        get_mlp_policy(obs_array.shape, n_action),
+        get_mlp_vf(obs_array.shape),
+        "BigTwo",
+        n_action,
+        policy_lr=lr,
+        value_lr=lr,
+    )
 
     ep_returns = []
     for i_episode in range(epoch):
@@ -550,7 +629,9 @@ def train_parallel(epoch=50, buffer_size=4000):
 
         policy_weight, value_weight = bot.get_weights()
 
-        tasks = create_worker_task(NUMBER_OF_PROCESSES, policy_weight, value_weight, buffer_size)
+        tasks = create_worker_task(
+            NUMBER_OF_PROCESSES, policy_weight, value_weight, buffer_size
+        )
         for task in tasks:
             task_queue.put(task)
 
@@ -566,16 +647,20 @@ def train_parallel(epoch=50, buffer_size=4000):
 
         update_time_taken = time.time() - update_start_time
 
-        epoch_summary = f"epoch: {i_episode + 1}, policy_loss: {policy_loss:.3f}, " \
-                        f"value_loss: {value_loss:.3f}, " \
-                        f"return: {np.mean(m.batch_rets):.3f}, " \
-                        f"ep_len: {np.mean(m.batch_lens):.3f} " \
-                        f"ep_hands_played: {np.mean(m.batch_hands_played):.3f} " \
-                        f"ep_games_played: {m.batch_games_played} " \
-                        f"time to sample: {sample_time_taken} " \
-                        f"time to update network: {update_time_taken}"
+        epoch_summary = (
+            f"epoch: {i_episode + 1}, policy_loss: {policy_loss:.3f}, "
+            f"value_loss: {value_loss:.3f}, "
+            f"return: {np.mean(m.batch_rets):.3f}, "
+            f"ep_len: {np.mean(m.batch_lens):.3f} "
+            f"ep_hands_played: {np.mean(m.batch_hands_played):.3f} "
+            f"ep_games_played: {m.batch_games_played} "
+            f"time to sample: {sample_time_taken} "
+            f"time to update network: {update_time_taken}"
+        )
         train_logger.info(epoch_summary)
-        train_logger.info(f"num_of_cards_played_summary: {Counter(m.num_of_cards_played).most_common()}")
+        train_logger.info(
+            f"num_of_cards_played_summary: {Counter(m.num_of_cards_played).most_common()}"
+        )
 
         ep_returns.append(np.mean(m.batch_rets))
         for game in m.game_history[:5]:
@@ -583,15 +668,78 @@ def train_parallel(epoch=50, buffer_size=4000):
 
         train_logger.info(f"event counter: {m.events_counter}")
 
-    # save_ep_returns_plot(ep_returns)
+    save_ep_returns_plot(ep_returns)
 
     # Tell child processes to stop
     for i in range(NUMBER_OF_PROCESSES):
-        task_queue.put('STOP')
+        task_queue.put("STOP")
+
+    bot.save("save")
 
 
-if __name__ == '__main__':
+def play_with_cmd():
+    env = BigTwo()
+
+    obs = env.reset()
+    result = obs_to_ohe_np_array(obs)
+
+    # numer of possible actions picking combination from 13 cards.
+    action_cat_mapping, idx_cat_mapping = create_action_cat_mapping()
+    n_action = len(action_cat_mapping)
+
+    player_list = []
+    for i in range(BigTwo.number_of_players() - 1):
+        bot = PPOAgent(
+            get_mlp_policy(result.shape, n_action),
+            get_mlp_vf(result.shape),
+            "BigTwo",
+            n_action,
+        )
+
+        player_list.append(bot)
+
+    player_list.append(CommandLineBot())
+
+    episode_step = 0
+    done = False
+    while not done:
+        obs = env.get_current_player_obs()
+        print("turn ", episode_step)
+        print("current_player", obs.current_player)
+        print(f"before player hand: {obs.your_hands}")
+        print("last_player_played: ", obs.last_player_played)
+        print(f"cards played: {obs.last_cards_played}")
+
+        current_player = player_list[obs.current_player]
+
+        if isinstance(current_player, CommandLineBot):
+            action = current_player.action(obs)
+            new_obs, reward, done = env.step(action)
+            print(f"cmd bot reward: {reward}")
+        else:
+            action_mask = generate_action_mask(
+                action_cat_mapping, idx_cat_mapping, obs.your_hands
+            )
+
+            obs_array = obs_to_ohe_np_array(obs)
+            action_tensor, _ = current_player.action(obs=obs_array, mask=action_mask)
+            action_cat = action_tensor.numpy()
+
+            action = action_cat_mapping[action_cat]
+            new_obs, reward, done = env.step(action)
+
+        episode_step += 1
+        print("action: " + str(action))
+        print(f"after player hand: {new_obs.your_hands}")
+        print(env.event_count)
+        print("====")
+
+    env.display_all_player_hands()
+
+
+if __name__ == "__main__":
     config_gpu()
     start_time = time.time()
-    train_parallel(epoch=3)
+    # train_parallel(epoch=10000)
+    play_with_cmd()
     print(f"Time taken: {time.time() - start_time:.3f} seconds")

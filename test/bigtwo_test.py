@@ -25,6 +25,16 @@ class TestBigTwo(unittest.TestCase):
 
         self.assertTrue(BigTwo.is_bigger(spade_two, heart_two), "Same rank but spade is higher suit")
 
+        spade_ten = [
+            Card(Suit.spades, Rank.ten)
+        ]
+
+        spade_queen = [
+            Card(Suit.spades, Rank.queen)
+        ]
+
+        self.assertTrue(BigTwo.is_bigger(spade_queen, spade_ten), "Same rank but spade is higher suit")
+
     def test_is_bigger_double(self):
         double_queen = [
             Card(Suit.spades, Rank.queen),

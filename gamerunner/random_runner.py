@@ -1,4 +1,4 @@
-from bigtwo import BigTwo
+from bigtwo.bigtwo import BigTwo
 from random_bot import RandomBot
 
 
@@ -16,13 +16,13 @@ def train():
         print("turn ", episode_step)
         print("current_player", obs.current_player)
         print(f"before player hand: {obs.your_hands}")
-        print('last_player_played: ', obs.last_player_played)
+        print("last_player_played: ", obs.last_player_played)
         print(f"cards played: {obs.last_cards_played}")
 
         action = player_list[obs.current_player].action(obs)
         new_obs, reward, done = env.step(action)
         episode_step += 1
-        print('action: ' + str(action))
+        print("action: " + str(action))
         print(f"after player hand: {new_obs.your_hands}")
         print("====")
 
@@ -31,5 +31,5 @@ def train():
             break
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     train()
