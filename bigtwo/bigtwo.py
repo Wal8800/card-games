@@ -99,6 +99,12 @@ class BigTwoObservation:
         self.current_player = current_player
         self.last_player_played = last_player_played
 
+    def can_skip(self) -> bool:
+        return (
+            self.last_player_played != BigTwo.UNKNOWN_PLAYER
+            and self.last_player_played != self.current_player
+        )
+
 
 class BigTwo:
     FULL_HOUSE = 1
@@ -106,6 +112,8 @@ class BigTwo:
     STRAIGHT = 3
     FLUSH = 4
     STRAIGHT_FLUSH = 5
+
+    UNKNOWN_PLAYER = 5
 
     def __init__(self):
         self.player_hands = self.__create_player_hand()
@@ -590,7 +598,9 @@ class BigTwo:
             last_cards_played,
             self.player_hands[player_number],
             player_number,
-            self.player_last_played if self.player_last_played is not None else 5,
+            self.player_last_played
+            if self.player_last_played is not None
+            else self.UNKNOWN_PLAYER,
         )
 
     def _apply_action(self, action) -> Tuple[BigTwoObservation, int, bool]:
