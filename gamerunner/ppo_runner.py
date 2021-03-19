@@ -608,79 +608,79 @@ def train_parallel(epoch=50, buffer_size=4000):
     for i in range(NUMBER_OF_PROCESSES):
         Process(target=sample_worker, args=(task_queue, done_queue)).start()
 
-    train_logger = get_logger("train_ppo", log_level=logging.INFO)
-    env = BigTwo()
+    try:
+        train_logger = get_logger("train_ppo", log_level=logging.INFO)
+        env = BigTwo()
+        obs = env.reset()
+        obs_array = obs_to_ohe_np_array(obs)
 
-    obs = env.reset()
-    obs_array = obs_to_ohe_np_array(obs)
-
-    # numer of possible actions picking combination from 13 cards.
-    action_cat_mapping, idx_cat_mapping = create_action_cat_mapping()
-    n_action = len(action_cat_mapping)
-    lr = 0.001
-    bot = PPOAgent(
-        get_mlp_policy(obs_array.shape, n_action, hidden_units=512),
-        get_mlp_vf(obs_array.shape, hidden_units=512),
-        "BigTwo",
-        n_action,
-        policy_lr=lr,
-        value_lr=lr,
-    )
-
-    ep_returns = []
-    min_ep_returns = []
-    for i_episode in range(epoch):
-        sample_start_time = time.time()
-
-        policy_weight, value_weight = bot.get_weights()
-
-        tasks = create_worker_task(
-            NUMBER_OF_PROCESSES, policy_weight, value_weight, buffer_size
+        # numer of possible actions picking combination from 13 cards.
+        action_cat_mapping, idx_cat_mapping = create_action_cat_mapping()
+        n_action = len(action_cat_mapping)
+        lr = 0.001
+        bot = PPOAgent(
+            get_mlp_policy(obs_array.shape, n_action, hidden_units=512),
+            get_mlp_vf(obs_array.shape, hidden_units=512),
+            "BigTwo",
+            n_action,
+            policy_lr=lr,
+            value_lr=lr,
         )
-        for task in tasks:
-            task_queue.put(task)
 
-        result: List[Tuple[GameBuffer, SampleMetric]] = []
+        ep_returns = []
+        min_ep_returns = []
+        for i_episode in range(epoch):
+            sample_start_time = time.time()
+
+            policy_weight, value_weight = bot.get_weights()
+
+            tasks = create_worker_task(
+                NUMBER_OF_PROCESSES, policy_weight, value_weight, buffer_size
+            )
+            for task in tasks:
+                task_queue.put(task)
+
+            result: List[Tuple[GameBuffer, SampleMetric]] = []
+            for i in range(NUMBER_OF_PROCESSES):
+                result.append(done_queue.get())
+
+            buf, m = merge_result(result)
+            sample_time_taken = time.time() - sample_start_time
+
+            update_start_time = time.time()
+            policy_loss, value_loss = bot.update(buf, mini_batch_size=512)
+
+            update_time_taken = time.time() - update_start_time
+
+            epoch_summary = (
+                f"epoch: {i_episode + 1}, policy_loss: {policy_loss:.3f}, "
+                f"value_loss: {value_loss:.3f}, "
+                f"return: {np.mean(m.batch_rets):.3f}, "
+                f"min returns: {np.min(m.batch_rets)}, "
+                f"ep_len: {np.mean(m.batch_lens):.3f}, "
+                f"ep_hands_played: {np.mean(m.batch_hands_played):.3f} "
+                f"ep_games_played: {m.batch_games_played} "
+                f"time to sample: {sample_time_taken} "
+                f"time to update network: {update_time_taken}"
+            )
+            train_logger.info(epoch_summary)
+
+            ep_returns.append(np.mean(m.batch_rets))
+            min_ep_returns.append(np.min(m.batch_rets))
+            train_logger.info(
+                f"num_of_cards_played_summary: {Counter(m.num_of_cards_played).most_common()}, "
+                f"num_of_valid_cards_played_summary: {Counter(m.num_of_valid_card_played).most_common()}"
+            )
+
+            train_logger.info(f"event counter: {m.events_counter}")
+
+        save_ep_returns_plot(min_ep_returns, epoch, name="min_ep_returns")
+        save_ep_returns_plot(ep_returns, epoch)
+        bot.save("save")
+    finally:
+        # Tell child processes to stop
         for i in range(NUMBER_OF_PROCESSES):
-            result.append(done_queue.get())
-
-        buf, m = merge_result(result)
-        sample_time_taken = time.time() - sample_start_time
-
-        update_start_time = time.time()
-        policy_loss, value_loss = bot.update(buf, mini_batch_size=512)
-
-        update_time_taken = time.time() - update_start_time
-
-        epoch_summary = (
-            f"epoch: {i_episode + 1}, policy_loss: {policy_loss:.3f}, "
-            f"value_loss: {value_loss:.3f}, "
-            f"return: {np.mean(m.batch_rets):.3f}, "
-            f"min returns: {np.min(m.batch_rets)}, "
-            f"ep_len: {np.mean(m.batch_lens):.3f}, "
-            f"ep_hands_played: {np.mean(m.batch_hands_played):.3f} "
-            f"ep_games_played: {m.batch_games_played} "
-            f"time to sample: {sample_time_taken} "
-            f"time to update network: {update_time_taken}"
-        )
-        train_logger.info(epoch_summary)
-
-        ep_returns.append(np.mean(m.batch_rets))
-        min_ep_returns.append(np.min(m.batch_rets))
-        train_logger.info(
-            f"num_of_cards_played_summary: {Counter(m.num_of_cards_played).most_common()}, "
-            f"num_of_valid_cards_played_summary: {Counter(m.num_of_valid_card_played).most_common()}"
-        )
-
-        train_logger.info(f"event counter: {m.events_counter}")
-
-    # Tell child processes to stop
-    for i in range(NUMBER_OF_PROCESSES):
-        task_queue.put("STOP")
-
-    save_ep_returns_plot(min_ep_returns, epoch, name="min_ep_returns")
-    save_ep_returns_plot(ep_returns, epoch)
-    bot.save("save")
+            task_queue.put("STOP")
 
 
 def play_with_cmd():
