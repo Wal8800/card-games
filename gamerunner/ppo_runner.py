@@ -341,22 +341,24 @@ def create_action_cat_mapping(
 
 
 def generate_action_mask(
-    act_cat_mapping: Dict[int, List[int]], idx_cat_mapping, player_hand: BigTwoHand
+    act_cat_mapping: Dict[int, List[int]],
+    idx_cat_mapping,
+    obs: BigTwoObservation,
 ) -> np.array:
     result = np.full(len(act_cat_mapping), False)
 
-    result[0] = True
+    result[0] = obs.can_skip()
 
     card_idx_mapping = {}
-    for idx in range(len(player_hand)):
+    for idx in range(len(obs.your_hands)):
         cat = idx_cat_mapping[frozenset([idx])]
-        card_idx_mapping[player_hand[idx]] = idx
+        card_idx_mapping[obs.your_hands[idx]] = idx
         result[cat] = True
 
-    if len(player_hand) < 2:
+    if len(obs.your_hands) < 2:
         return result
 
-    for pair in player_hand.pairs:
+    for pair in obs.your_hands.pairs:
         pair_idx = []
         for card in pair:
             pair_idx.append(card_idx_mapping.get(card))
@@ -364,10 +366,10 @@ def generate_action_mask(
         cat = idx_cat_mapping[frozenset(pair_idx)]
         result[cat] = True
 
-    if len(player_hand) < 5:
+    if len(obs.your_hands) < 5:
         return result
 
-    for _, combinations in player_hand.combinations.items():
+    for _, combinations in obs.your_hands.combinations.items():
         for comb in combinations:
             comb_idx = []
             for card in comb:
@@ -423,9 +425,7 @@ def collect_data_from_env(
         obs = env.get_current_player_obs()
         obs_array = obs_to_ohe_np_array(obs)
 
-        action_mask = generate_action_mask(
-            action_cat_mapping, idx_cat_mapping, obs.your_hands
-        )
+        action_mask = generate_action_mask(action_cat_mapping, idx_cat_mapping, obs)
 
         action_tensor, logp_tensor = bot.action(obs=obs_array, mask=action_mask)
         action_cat = action_tensor.numpy()
@@ -722,9 +722,7 @@ def play_with_cmd():
             new_obs, reward, done = env.step(action)
             print(f"cmd bot reward: {reward}")
         else:
-            action_mask = generate_action_mask(
-                action_cat_mapping, idx_cat_mapping, obs.your_hands
-            )
+            action_mask = generate_action_mask(action_cat_mapping, idx_cat_mapping, obs)
 
             obs_array = obs_to_ohe_np_array(obs)
             action_tensor, _ = current_player.action(obs=obs_array, mask=action_mask)
