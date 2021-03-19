@@ -387,6 +387,17 @@ def sample_worker(input: Queue, output: Queue):
         output.put((buf, m))
 
 
+def create_ppo_agent(obs_shape, n_action: int, lr: float = 0.01) -> PPOAgent:
+    return PPOAgent(
+        get_mlp_policy(obs_shape, n_action, hidden_units=512),
+        get_mlp_vf(obs_shape, hidden_units=512),
+        "BigTwo",
+        n_action,
+        policy_lr=lr,
+        value_lr=lr,
+    )
+
+
 def collect_data_from_env(
     policy_weight, value_weight, buffer_size=4000
 ) -> Tuple[GameBuffer, SampleMetric]:
@@ -398,12 +409,7 @@ def collect_data_from_env(
     # numer of possible actions picking combination from 13 cards.
     action_cat_mapping, idx_cat_mapping = create_action_cat_mapping()
     n_action = len(action_cat_mapping)
-    bot = PPOAgent(
-        get_mlp_policy(result.shape, n_action, hidden_units=512),
-        get_mlp_vf(result.shape, hidden_units=512),
-        "BigTwo",
-        n_action,
-    )
+    bot = create_ppo_agent(result.shape, n_action)
     bot.set_weights(policy_weight, value_weight)
 
     player_buf = create_player_buf()
@@ -596,7 +602,7 @@ def merge_result(
     return result_buf, result_metric
 
 
-def train_parallel(epoch=50, buffer_size=4000):
+def train_parallel(epoch=50, buffer_size=4000, lr=0.001):
     mp.set_start_method("spawn")
 
     # setting up worker for sampling
@@ -617,15 +623,8 @@ def train_parallel(epoch=50, buffer_size=4000):
         # numer of possible actions picking combination from 13 cards.
         action_cat_mapping, idx_cat_mapping = create_action_cat_mapping()
         n_action = len(action_cat_mapping)
-        lr = 0.001
-        bot = PPOAgent(
-            get_mlp_policy(obs_array.shape, n_action, hidden_units=512),
-            get_mlp_vf(obs_array.shape, hidden_units=512),
-            "BigTwo",
-            n_action,
-            policy_lr=lr,
-            value_lr=lr,
-        )
+
+        bot = create_ppo_agent(obs_array.shape, n_action, lr)
 
         ep_returns = []
         min_ep_returns = []
