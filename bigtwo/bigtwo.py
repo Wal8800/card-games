@@ -390,17 +390,17 @@ class BigTwo:
                 self.__increment_event(event)
                 return self._current_observation(self.current_player), -1, False
 
-            # if self.have_playable_cards(self.get_current_combination(), player_hand):
-            #     self.__increment_event("have playable cards")
-            #     return self._current_observation(self.current_player), -1, False
-
             # skipping
             previous_player = self.current_player
             self.current_player += 1
             if self.current_player > self.number_of_players() - 1:
                 self.current_player = 0
 
-            return self._current_observation(previous_player), 0, False
+            reward = 0
+            if self.have_playable_cards(self.get_current_combination(), player_hand):
+                reward = -1
+
+            return self._current_observation(previous_player), reward, False
 
         if not BigTwo.is_valid_card_combination(action):
             self.__increment_event("invalid combination")

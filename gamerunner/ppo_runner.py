@@ -125,11 +125,15 @@ class SampleMetric:
         self.batch_rets = []
         self.batch_hands_played = []
         self.num_of_cards_played = []
+        self.num_of_valid_card_played = []
         self.game_history = []
         self.batch_games_played = 0
 
-    def track_action(self, action):
+    def track_action(self, action, rewards):
         num_of_cards = sum(action)
+        if rewards >= 0:
+            self.num_of_valid_card_played.append(num_of_cards)
+
         self.num_of_cards_played.append(num_of_cards)
 
     def track_env(self, env: BigTwo, done=False):
@@ -285,10 +289,10 @@ def get_logger(logger_name, log_level):
     return logger
 
 
-def save_ep_returns_plot(values) -> None:
+def save_ep_returns_plot(values, epoch, name="ep_ret") -> None:
     ax = sns.lineplot(data=values)
     figure = ax.get_figure()
-    figure.savefig(f"./plots/ppo_runner_ep_returns.png", dpi=400)
+    figure.savefig(f"./plots/ppo_{name}_{int(time.time())}_{epoch}.png", dpi=400)
 
 
 def create_action_cat_mapping(
@@ -395,8 +399,8 @@ def collect_data_from_env(
     action_cat_mapping, idx_cat_mapping = create_action_cat_mapping()
     n_action = len(action_cat_mapping)
     bot = PPOAgent(
-        get_mlp_policy(result.shape, n_action),
-        get_mlp_vf(result.shape),
+        get_mlp_policy(result.shape, n_action, hidden_units=512),
+        get_mlp_vf(result.shape, hidden_units=512),
         "BigTwo",
         n_action,
     )
@@ -423,9 +427,8 @@ def collect_data_from_env(
 
         action = action_cat_mapping[action_cat]
 
-        sample_metric.track_action(action)
-
         new_obs, reward, done = env.step(action)
+        sample_metric.track_action(action, reward)
 
         # storing the trajectory per players because the awards is per player not sum of all players.
         player_ep_rews[obs.current_player].append(reward)
@@ -588,6 +591,7 @@ def merge_result(
         result_metric.num_of_cards_played += m.num_of_cards_played
         result_metric.game_history += [h for h in m.game_history if len(h) > 0]
         result_metric.batch_games_played += m.batch_games_played
+        result_metric.num_of_valid_card_played += m.num_of_valid_card_played
 
     return result_buf, result_metric
 
@@ -615,8 +619,8 @@ def train_parallel(epoch=50, buffer_size=4000):
     n_action = len(action_cat_mapping)
     lr = 0.001
     bot = PPOAgent(
-        get_mlp_policy(obs_array.shape, n_action),
-        get_mlp_vf(obs_array.shape),
+        get_mlp_policy(obs_array.shape, n_action, hidden_units=512),
+        get_mlp_vf(obs_array.shape, hidden_units=512),
         "BigTwo",
         n_action,
         policy_lr=lr,
@@ -624,6 +628,7 @@ def train_parallel(epoch=50, buffer_size=4000):
     )
 
     ep_returns = []
+    min_ep_returns = []
     for i_episode in range(epoch):
         sample_start_time = time.time()
 
@@ -651,29 +656,30 @@ def train_parallel(epoch=50, buffer_size=4000):
             f"epoch: {i_episode + 1}, policy_loss: {policy_loss:.3f}, "
             f"value_loss: {value_loss:.3f}, "
             f"return: {np.mean(m.batch_rets):.3f}, "
-            f"ep_len: {np.mean(m.batch_lens):.3f} "
+            f"min returns: {np.min(m.batch_rets)}, "
+            f"ep_len: {np.mean(m.batch_lens):.3f}, "
             f"ep_hands_played: {np.mean(m.batch_hands_played):.3f} "
             f"ep_games_played: {m.batch_games_played} "
             f"time to sample: {sample_time_taken} "
             f"time to update network: {update_time_taken}"
         )
         train_logger.info(epoch_summary)
-        train_logger.info(
-            f"num_of_cards_played_summary: {Counter(m.num_of_cards_played).most_common()}"
-        )
 
         ep_returns.append(np.mean(m.batch_rets))
-        for game in m.game_history[:5]:
-            train_logger.info(game)
+        min_ep_returns.append(np.min(m.batch_rets))
+        train_logger.info(
+            f"num_of_cards_played_summary: {Counter(m.num_of_cards_played).most_common()}, "
+            f"num_of_valid_cards_played_summary: {Counter(m.num_of_valid_card_played).most_common()}"
+        )
 
         train_logger.info(f"event counter: {m.events_counter}")
-
-    save_ep_returns_plot(ep_returns)
 
     # Tell child processes to stop
     for i in range(NUMBER_OF_PROCESSES):
         task_queue.put("STOP")
 
+    save_ep_returns_plot(min_ep_returns, epoch, name="min_ep_returns")
+    save_ep_returns_plot(ep_returns, epoch)
     bot.save("save")
 
 
@@ -740,6 +746,6 @@ def play_with_cmd():
 if __name__ == "__main__":
     config_gpu()
     start_time = time.time()
-    # train_parallel(epoch=10000)
-    play_with_cmd()
+    train_parallel(epoch=2000)
+    # play_with_cmd()
     print(f"Time taken: {time.time() - start_time:.3f} seconds")
