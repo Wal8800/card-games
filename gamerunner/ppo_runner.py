@@ -10,12 +10,14 @@ from typing import Dict, List, Tuple
 import numpy as np
 import seaborn as sns
 import tensorflow as tf
+import tensorflow.keras as keras
 from algorithm.agent import (
     PPOAgent,
     discounted_sum_of_rewards,
     get_mlp_vf,
     get_mlp_policy,
 )
+from tensorflow.keras import layers
 
 from bigtwo.bigtwo import BigTwoObservation, BigTwo
 from gamerunner.cmd_line_bot import CommandLineBot
@@ -372,10 +374,10 @@ def generate_action_mask_first_turn(
         result[cat] = True
 
     for _, combinations in obs.your_hands.combinations.items():
-        if diamond_three not in combinations:
-            continue
-
         for comb in combinations:
+            if diamond_three not in comb:
+                continue
+
             comb_idx = []
             for card in comb:
                 comb_idx.append(card_idx_mapping.get(card))
@@ -447,13 +449,22 @@ def sample_worker(input: Queue, output: Queue):
 
 
 def create_ppo_agent(obs_shape, n_action: int, lr: float = 0.01) -> PPOAgent:
+    # (319,) 1379
+
+    obs_inp = layers.Input(shape=obs_shape, name="obs")
+    x = layers.Dense(512, activation="relu")(obs_inp)
+    x = layers.Dense(1024, activation="relu")(x)
+    output = layers.Dense(n_action)(x)
+    policy = keras.Model(inputs=obs_inp, outputs=output)
+
     return PPOAgent(
-        get_mlp_policy(obs_shape, n_action, hidden_units=512),
-        get_mlp_vf(obs_shape, hidden_units=512),
+        policy,
+        get_mlp_vf(obs_shape, hidden_units=256),
         "BigTwo",
         n_action,
         policy_lr=lr,
         value_lr=lr,
+        clip_ratio=0.3,
     )
 
 
@@ -727,8 +738,8 @@ def train_parallel(epoch=50, buffer_size=4000, lr=0.001):
 
             train_logger.info(f"event counter: {m.events_counter}")
 
-        save_ep_returns_plot(min_ep_returns, epoch, name="min_ep_returns")
-        save_ep_returns_plot(ep_returns, epoch)
+        plot_data = {"min_ret": min_ep_returns, "avg_ret": ep_returns}
+        save_ep_returns_plot(plot_data, epoch)
         bot.save("save")
     finally:
         print("stopping workers")
@@ -798,6 +809,6 @@ def play_with_cmd():
 if __name__ == "__main__":
     config_gpu()
     start_time = time.time()
-    train_parallel(epoch=4000)
+    # train_parallel(epoch=2000)
     # play_with_cmd()
     print(f"Time taken: {time.time() - start_time:.3f} seconds")
