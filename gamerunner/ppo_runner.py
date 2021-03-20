@@ -17,7 +17,7 @@ from algorithm.agent import (
     get_mlp_policy,
 )
 
-from bigtwo.bigtwo import BigTwoObservation, BigTwo, BigTwoHand
+from bigtwo.bigtwo import BigTwoObservation, BigTwo
 from gamerunner.cmd_line_bot import CommandLineBot
 from playingcards.card import Card, Suit, Rank
 
@@ -340,25 +340,30 @@ def create_action_cat_mapping(
     return result, reverse_lookup
 
 
-def generate_action_mask(
+def generate_action_mask_first_turn(
     act_cat_mapping: Dict[int, List[int]],
     idx_cat_mapping,
     obs: BigTwoObservation,
 ) -> np.array:
     result = np.full(len(act_cat_mapping), False)
 
-    result[0] = obs.can_skip()
+    diamond_three = Card(Suit.diamond, Rank.three)
 
     card_idx_mapping = {}
     for idx in range(len(obs.your_hands)):
+        card = obs.your_hands[idx]
+        card_idx_mapping[card] = idx
+
+        if card != diamond_three:
+            continue
+
         cat = idx_cat_mapping[frozenset([idx])]
-        card_idx_mapping[obs.your_hands[idx]] = idx
         result[cat] = True
 
-    if len(obs.your_hands) < 2:
-        return result
-
     for pair in obs.your_hands.pairs:
+        if diamond_three not in pair:
+            continue
+
         pair_idx = []
         for card in pair:
             pair_idx.append(card_idx_mapping.get(card))
@@ -366,10 +371,10 @@ def generate_action_mask(
         cat = idx_cat_mapping[frozenset(pair_idx)]
         result[cat] = True
 
-    if len(obs.your_hands) < 5:
-        return result
-
     for _, combinations in obs.your_hands.combinations.items():
+        if diamond_three not in combinations:
+            continue
+
         for comb in combinations:
             comb_idx = []
             for card in comb:
@@ -377,6 +382,58 @@ def generate_action_mask(
 
             cat = idx_cat_mapping[frozenset(comb_idx)]
             result[cat] = True
+
+    return result
+
+
+def generate_action_mask(
+    act_cat_mapping: Dict[int, List[int]],
+    idx_cat_mapping,
+    obs: BigTwoObservation,
+) -> np.array:
+    if obs.last_player_played == BigTwo.UNKNOWN_PLAYER:
+        return generate_action_mask_first_turn(act_cat_mapping, idx_cat_mapping, obs)
+
+    result = np.full(len(act_cat_mapping), False)
+    result[0] = obs.can_skip()
+
+    n_cards_to_play = len(obs.last_cards_played)
+
+    can_play_anything = (
+        n_cards_to_play == 0 or obs.last_player_played == obs.current_player
+    )
+
+    card_idx_mapping = {obs.your_hands[idx]: idx for idx in range(len(obs.your_hands))}
+
+    if can_play_anything or n_cards_to_play == 1:
+        for idx in range(len(obs.your_hands)):
+            cat = idx_cat_mapping[frozenset([idx])]
+            result[cat] = True
+
+    if len(obs.your_hands) < 2:
+        return result
+
+    if can_play_anything or n_cards_to_play == 2:
+        for pair in obs.your_hands.pairs:
+            pair_idx = []
+            for card in pair:
+                pair_idx.append(card_idx_mapping.get(card))
+
+            cat = idx_cat_mapping[frozenset(pair_idx)]
+            result[cat] = True
+
+    if len(obs.your_hands) < 5:
+        return result
+
+    if can_play_anything or n_cards_to_play == 5:
+        for _, combinations in obs.your_hands.combinations.items():
+            for comb in combinations:
+                comb_idx = []
+                for card in comb:
+                    comb_idx.append(card_idx_mapping.get(card))
+
+                cat = idx_cat_mapping[frozenset(comb_idx)]
+                result[cat] = True
 
     return result
 
@@ -617,8 +674,7 @@ def train_parallel(epoch=50, buffer_size=4000, lr=0.001):
     try:
         train_logger = get_logger("train_ppo", log_level=logging.INFO)
         env = BigTwo()
-        obs = env.reset()
-        obs_array = obs_to_ohe_np_array(obs)
+        obs_array = obs_to_ohe_np_array(env.reset())
 
         # numer of possible actions picking combination from 13 cards.
         action_cat_mapping, idx_cat_mapping = create_action_cat_mapping()
@@ -626,8 +682,7 @@ def train_parallel(epoch=50, buffer_size=4000, lr=0.001):
 
         bot = create_ppo_agent(obs_array.shape, n_action, lr)
 
-        ep_returns = []
-        min_ep_returns = []
+        ep_returns, min_ep_returns = [], []
         for i_episode in range(epoch):
             sample_start_time = time.time()
 
@@ -648,7 +703,6 @@ def train_parallel(epoch=50, buffer_size=4000, lr=0.001):
 
             update_start_time = time.time()
             policy_loss, value_loss = bot.update(buf, mini_batch_size=512)
-
             update_time_taken = time.time() - update_start_time
 
             epoch_summary = (
@@ -677,6 +731,7 @@ def train_parallel(epoch=50, buffer_size=4000, lr=0.001):
         save_ep_returns_plot(ep_returns, epoch)
         bot.save("save")
     finally:
+        print("stopping workers")
         # Tell child processes to stop
         for i in range(NUMBER_OF_PROCESSES):
             task_queue.put("STOP")
@@ -743,6 +798,6 @@ def play_with_cmd():
 if __name__ == "__main__":
     config_gpu()
     start_time = time.time()
-    train_parallel(epoch=2000)
+    train_parallel(epoch=4000)
     # play_with_cmd()
     print(f"Time taken: {time.time() - start_time:.3f} seconds")
