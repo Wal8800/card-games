@@ -1,6 +1,6 @@
 import unittest
 
-from bigtwo.bigtwo import BigTwoHand, BigTwoObservation
+from bigtwo.bigtwo import BigTwoHand, BigTwoObservation, BigTwo
 from gamerunner.ppo_runner import create_action_cat_mapping, generate_action_mask
 from playingcards.card import Card, Suit, Rank
 
@@ -90,3 +90,38 @@ class TestPPORunner(unittest.TestCase):
         mask = generate_action_mask(action_cat_mapping, idx_cat_mapping, obs)
 
         self.assertFalse(mask[0])
+
+    def test_generate_action_mask_first_turn(self):
+        action_cat_mapping, idx_cat_mapping = create_action_cat_mapping()
+
+        cards = [
+            Card(Suit.diamond, Rank.three),
+            Card(Suit.spades, Rank.three),
+            Card(Suit.hearts, Rank.four),
+            Card(Suit.spades, Rank.four),
+            Card(Suit.clubs, Rank.four),
+        ]
+        hand = BigTwoHand(cards)
+        obs = BigTwoObservation([], [], hand, 1, BigTwo.UNKNOWN_PLAYER)
+
+        mask = generate_action_mask(action_cat_mapping, idx_cat_mapping, obs)
+
+        self.assertFalse(mask[0])
+
+        # can play diamond three
+        self.assertTrue(mask[1])
+
+        # rest is invalid
+        self.assertFalse(mask[2])
+        self.assertFalse(mask[3])
+        self.assertFalse(mask[4])
+        self.assertFalse(mask[5])
+
+        # can play double three
+        self.assertTrue(mask[14])
+
+        # other pairs is invalid
+        self.assertFalse(mask[20])
+
+        # can play combination including diamond three
+        self.assertTrue(mask[92])
