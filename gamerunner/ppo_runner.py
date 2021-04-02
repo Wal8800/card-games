@@ -482,7 +482,7 @@ def collect_data_from_env(
     bot = create_ppo_agent(result.shape, n_action)
     bot.set_weights(policy_weight, value_weight)
 
-    player_buf = create_player_buf()
+    player_bufs = create_player_buf()
     player_ep_rews = create_player_rew_buf()
 
     sample_metric = SampleMetric()
@@ -506,7 +506,7 @@ def collect_data_from_env(
 
         # storing the trajectory per players because the awards is per player not sum of all players.
         player_ep_rews[obs.current_player].append(reward)
-        player_buf[obs.current_player].store(
+        player_bufs[obs.current_player].store(
             obs_array, action_cat, reward, logp, action_mask
         )
 
@@ -515,31 +515,31 @@ def collect_data_from_env(
             ep_ret, ep_len = 0, 0
             # add to buf
             # process each player buf then add it to the big one
-            for player_number in range(4):
+            for player_number, player_buf in player_bufs.items():
                 ep_rews = player_ep_rews[player_number]
                 ep_ret += sum(ep_rews)
                 ep_len += len(ep_rews)
 
-                if player_buf[player_number].is_empty():
+                if player_buf.is_empty():
                     continue
 
-                estimated_values = bot.predict_value(
-                    player_buf[player_number].get_curr_path()
-                )
+                estimated_values = bot.predict_value(player_buf.get_curr_path())
+
                 last_val = 0
                 if not done and epoch_ended:
                     last_obs = env.get_player_obs(player_number)
                     last_obs_arr = np.array([obs_to_ohe_np_array(last_obs)])
                     last_val = bot.predict_value(last_obs_arr)
-                player_buf[player_number].finish_path(estimated_values, last_val)
-                buf.add(player_buf[player_number])
+
+                player_buf.finish_path(estimated_values, last_val)
+                buf.add(player_buf)
 
             sample_metric.track_rewards(ep_ret, ep_len)
             sample_metric.track_env(env, done)
 
             # reset game
             env.reset()
-            player_buf = create_player_buf()
+            player_bufs = create_player_buf()
             player_ep_rews = create_player_rew_buf()
 
     return buf, sample_metric
@@ -693,7 +693,7 @@ def train_parallel(epoch=50, buffer_size=4000, lr=0.001):
 
         bot = create_ppo_agent(obs_array.shape, n_action, lr)
 
-        ep_returns, min_ep_returns = [], []
+        ep_returns, min_ep_returns, med_ep_ret = [], [], []
         for i_episode in range(epoch):
             sample_start_time = time.time()
 
@@ -721,6 +721,7 @@ def train_parallel(epoch=50, buffer_size=4000, lr=0.001):
                 f"value_loss: {value_loss:.3f}, "
                 f"return: {np.mean(m.batch_rets):.3f}, "
                 f"min returns: {np.min(m.batch_rets)}, "
+                f"med returns: {np.median(m.batch_rets)}, "
                 f"ep_len: {np.mean(m.batch_lens):.3f}, "
                 f"ep_hands_played: {np.mean(m.batch_hands_played):.3f} "
                 f"ep_games_played: {m.batch_games_played} "
@@ -731,6 +732,7 @@ def train_parallel(epoch=50, buffer_size=4000, lr=0.001):
 
             ep_returns.append(np.mean(m.batch_rets))
             min_ep_returns.append(np.min(m.batch_rets))
+            med_ep_ret.append(np.median(m.batch_rets))
             train_logger.info(
                 f"num_of_cards_played_summary: {Counter(m.num_of_cards_played).most_common()}, "
                 f"num_of_valid_cards_played_summary: {Counter(m.num_of_valid_card_played).most_common()}"
@@ -738,7 +740,11 @@ def train_parallel(epoch=50, buffer_size=4000, lr=0.001):
 
             train_logger.info(f"event counter: {m.events_counter}")
 
-        plot_data = {"min_ret": min_ep_returns, "avg_ret": ep_returns}
+        plot_data = {
+            "min_ret": min_ep_returns,
+            "avg_ret": ep_returns,
+            "med_ret": med_ep_ret,
+        }
         save_ep_returns_plot(plot_data, epoch)
         bot.save("save")
     finally:
@@ -809,6 +815,6 @@ def play_with_cmd():
 if __name__ == "__main__":
     config_gpu()
     start_time = time.time()
-    # train_parallel(epoch=2000)
+    train_parallel(epoch=4000)
     # play_with_cmd()
     print(f"Time taken: {time.time() - start_time:.3f} seconds")
