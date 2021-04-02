@@ -613,10 +613,8 @@ class BigTwo:
             self.current_player = 0
         self.player_last_played = previous_player
 
-        reward = len(action) ** 2
+        reward = 1
         game_finished = len(self.player_hands[previous_player]) == 0
-        if game_finished:
-            reward += 100
         return self._current_observation(previous_player), reward, game_finished
 
     def __create_player_hand(self) -> List[BigTwoHand]:

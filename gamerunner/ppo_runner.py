@@ -440,10 +440,10 @@ def generate_action_mask(
     return result
 
 
-def sample_worker(input: Queue, output: Queue):
+def sample_worker(input_queue: Queue, output: Queue):
     config_gpu()
 
-    for policy_weight, value_weight, buffer_size in iter(input.get, "STOP"):
+    for policy_weight, value_weight, buffer_size in iter(input_queue.get, "STOP"):
         buf, m = collect_data_from_env(policy_weight, value_weight, buffer_size)
         output.put((buf, m))
 
@@ -815,6 +815,6 @@ def play_with_cmd():
 if __name__ == "__main__":
     config_gpu()
     start_time = time.time()
-    train_parallel(epoch=4000)
+    train_parallel(epoch=2000)
     # play_with_cmd()
     print(f"Time taken: {time.time() - start_time:.3f} seconds")
