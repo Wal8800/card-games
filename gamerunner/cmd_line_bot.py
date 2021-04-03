@@ -1,9 +1,11 @@
+from typing import List
+
 from big_two_bot import BigTwoBot
 from bigtwo.bigtwo import BigTwoObservation
 
 
 class CommandLineBot(BigTwoBot):
-    def action(self, observation: BigTwoObservation):
+    def action(self, observation: BigTwoObservation) -> List[int]:
         print("Your turn: ")
         print("Your hand:" + str(observation.your_hands))
         hands = input('Enter the cards you want to play (1-13) or enter "skip" : ')

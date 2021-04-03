@@ -12,4 +12,4 @@ setup:
 	pip3 install -r requirement.txt
 
 update_package:
-	pip install git+ssh://git@github.com/Wal8800/gym-playground.git@0.3.0
+	pip install git+ssh://git@github.com/Wal8800/gym-playground.git@2.1.0
