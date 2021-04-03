@@ -1,13 +1,17 @@
 import itertools
 import logging
 import multiprocessing as mp
+import os
 import sys
 import time
 from collections import Counter
+from dataclasses import dataclass, asdict
+from datetime import datetime
 from multiprocessing import Queue, Process
 from typing import Dict, List, Tuple
 
 import numpy as np
+import pandas as pd
 import seaborn as sns
 import tensorflow as tf
 
@@ -103,12 +107,6 @@ def create_player_rew_buf(num_of_player=4) -> Dict[int, List[int]]:
     return {i: [] for i in range(num_of_player)}
 
 
-def save_ep_returns_plot(values, epoch, name="ep_ret") -> None:
-    ax = sns.lineplot(data=values)
-    figure = ax.get_figure()
-    figure.savefig(f"./plots/ppo_{name}_{int(time.time())}_{epoch}.png", dpi=400)
-
-
 def sample_worker(input_queue: Queue, output: Queue):
     config_gpu()
 
@@ -194,7 +192,7 @@ def create_worker_task(num_cpu, policy_weight, value_weight, buffer_size):
     return args
 
 
-def train(epoch=10, lr=0.001):
+def train(epoch=5, lr=0.001):
     train_logger = get_logger("train_ppo", log_level=logging.INFO)
     env = BigTwo()
 
@@ -256,11 +254,55 @@ def merge_result(
     return result_buf, result_metric
 
 
-def train_parallel(epoch=50, buffer_size=4000, lr=0.0001):
+@dataclass
+class ExperimentConfig:
+    epoch: int = 5
+    buffer_size: int = 4000
+    lr: float = 0.0001
+    mini_batch_size: int = 512
+
+    num_of_worker: int = 10
+
+    clip_ratio: float = 0.3
+
+
+class ExperimentLogger:
+    def __init__(self):
+        self.metrics = []
+
+    def store(self, m: SampleMetric):
+        self.metrics.append(m)
+
+    def flush(self, root_dir: str, config: ExperimentConfig):
+        new_dir = datetime.now().strftime("%d_%b_%Y_%H_%M_%S")
+
+        new_dir_path = f"./{root_dir}/{new_dir}"
+        os.makedirs(new_dir_path)
+
+        # As we are using all scalar values, we need to pass an index
+        # wrapping the dict in a list means the index of the values is 0
+        df = pd.DataFrame([asdict(config)])
+        df.to_csv(f"{new_dir_path}/config.csv", index=False)
+
+        min_ep_ret = [np.min(m.batch_rets) for m in self.metrics]
+        avg_ep_ret = [np.mean(m.batch_rets) for m in self.metrics]
+        med_ep_ret = [np.median(m.batch_rets) for m in self.metrics]
+        plot_data = {
+            "min_ret": min_ep_ret,
+            "avg_ret": avg_ep_ret,
+            "med_ret": med_ep_ret,
+        }
+
+        ax = sns.lineplot(data=plot_data)
+        figure = ax.get_figure()
+        figure.savefig(f"{new_dir_path}/returns_plot.png", dpi=400)
+
+
+def train_parallel(config: ExperimentConfig):
     mp.set_start_method("spawn")
 
     # setting up worker for sampling
-    NUMBER_OF_PROCESSES = 10
+    NUMBER_OF_PROCESSES = config.num_of_worker
     task_queue = Queue()
     done_queue = Queue()
 
@@ -271,16 +313,17 @@ def train_parallel(epoch=50, buffer_size=4000, lr=0.0001):
     try:
         train_logger = get_logger("train_ppo", log_level=logging.INFO)
         env = BigTwo()
-        bot = SimplePPOBot(env.reset(), lr=lr)
+        bot = SimplePPOBot(env.reset(), lr=config.lr)
+        experiment_log = ExperimentLogger()
 
         ep_returns, min_ep_returns, med_ep_ret = [], [], []
-        for i_episode in range(epoch):
+        for i_episode in range(config.epoch):
             sample_start_time = time.time()
 
             policy_weight, value_weight = bot.get_weights()
 
             tasks = create_worker_task(
-                NUMBER_OF_PROCESSES, policy_weight, value_weight, buffer_size
+                NUMBER_OF_PROCESSES, policy_weight, value_weight, config.buffer_size
             )
             for task in tasks:
                 task_queue.put(task)
@@ -293,7 +336,9 @@ def train_parallel(epoch=50, buffer_size=4000, lr=0.0001):
             sample_time_taken = time.time() - sample_start_time
 
             update_start_time = time.time()
-            policy_loss, value_loss = bot.update(buf, mini_batch_size=512)
+            policy_loss, value_loss = bot.update(
+                buf, mini_batch_size=config.mini_batch_size
+            )
             update_time_taken = time.time() - update_start_time
 
             epoch_summary = (
@@ -306,16 +351,9 @@ def train_parallel(epoch=50, buffer_size=4000, lr=0.0001):
             train_logger.info(m.summary())
             train_logger.info(m.cards_played_summary())
 
-            ep_returns.append(np.mean(m.batch_rets))
-            min_ep_returns.append(np.min(m.batch_rets))
-            med_ep_ret.append(np.median(m.batch_rets))
+            experiment_log.store(m)
 
-        plot_data = {
-            "min_ret": min_ep_returns,
-            "avg_ret": ep_returns,
-            "med_ret": med_ep_ret,
-        }
-        save_ep_returns_plot(plot_data, epoch)
+        experiment_log.flush("./experiments", config)
         # bot.save("save")
     finally:
         print("stopping workers")
@@ -367,7 +405,7 @@ def play_with_cmd():
 if __name__ == "__main__":
     config_gpu()
     start_time = time.time()
-    # train()
-    train_parallel(epoch=1000)
+    train()
+    # train_parallel(ExperimentConfig())
     # play_with_cmd()
     print(f"Time taken: {time.time() - start_time:.3f} seconds")

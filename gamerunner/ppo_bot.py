@@ -359,7 +359,7 @@ class GameBuffer(PPOBufferInterface):
 
 
 class SimplePPOBot(BigTwoBot):
-    def __init__(self, observation: BigTwoObservation, lr=0.0001):
+    def __init__(self, observation: BigTwoObservation, lr=0.0001, clip_ratio=0.3):
         result = obs_to_ohe_np_array(observation)
 
         self.action_cat_mapping, self.idx_cat_mapping = create_action_cat_mapping()
@@ -378,7 +378,7 @@ class SimplePPOBot(BigTwoBot):
             n_action,
             policy_lr=lr,
             value_lr=lr,
-            clip_ratio=0.3,
+            clip_ratio=clip_ratio,
         )
 
     def set_weights(self, policy_weights, value_weights):

@@ -579,8 +579,9 @@ class BigTwo:
 
     def _current_observation(self, player_number: int) -> BigTwoObservation:
         num_card_per_player = []
+        index = player_number
         while True:
-            index = player_number + 1
+            index += 1
             if index >= len(self.player_hands):
                 index = 0
 
