@@ -404,9 +404,9 @@ class BigTwo:
             if self.current_player > self.number_of_players() - 1:
                 self.current_player = 0
 
-            reward = 0
-            if self.have_playable_cards(self.get_current_combination(), player_hand):
-                reward = -1
+            reward = -1
+            # if self.have_playable_cards(self.get_current_combination(), player_hand):
+            #     reward = -1
 
             return self._current_observation(previous_player), reward, False
 
@@ -613,8 +613,10 @@ class BigTwo:
             self.current_player = 0
         self.player_last_played = previous_player
 
-        reward = 1
+        reward = -1
         game_finished = len(self.player_hands[previous_player]) == 0
+        if game_finished:
+            reward = 0
         return self._current_observation(previous_player), reward, game_finished
 
     def __create_player_hand(self) -> List[BigTwoHand]:

@@ -77,6 +77,23 @@ class SampleMetric:
         self.batch_rets.append(ep_ret)
         self.batch_lens.append(ep_len)
 
+    def summary(self) -> str:
+        return (
+            f"return: {np.mean(self.batch_rets):.3f}, "
+            f"min returns: {np.min(self.batch_rets)}, "
+            f"med returns: {np.median(self.batch_rets)}, "
+            f"ep_len: {np.mean(self.batch_lens):.3f} "
+            f"ep_hands_played: {np.mean(self.batch_hands_played):.3f} "
+            f"ep_games_played: {self.batch_games_played}, "
+            f"event counter: {self.events_counter}"
+        )
+
+    def cards_played_summary(self) -> str:
+        return (
+            f"num_of_cards_played_summary: {Counter(self.num_of_cards_played).most_common()}, "
+            f"num_of_valid_cards_played_summary: {Counter(self.num_of_valid_card_played).most_common()}, "
+        )
+
 
 def create_player_buf(num_of_player=4) -> Dict[int, PlayerBuffer]:
     return {i: PlayerBuffer() for i in range(num_of_player)}
@@ -183,7 +200,6 @@ def train(epoch=10, lr=0.001):
 
     bot = SimplePPOBot(env.reset(), lr=lr)
 
-    ep_returns = []
     for i_episode in range(epoch):
         sample_start_time = time.time()
 
@@ -201,21 +217,12 @@ def train(epoch=10, lr=0.001):
         epoch_summary = (
             f"epoch: {i_episode + 1}, policy_loss: {policy_loss:.3f}, "
             f"value_loss: {value_loss:.3f}, "
-            f"return: {np.mean(m.batch_rets):.3f}, "
-            f"ep_len: {np.mean(m.batch_lens):.3f} "
-            f"ep_hands_played: {np.mean(m.batch_hands_played):.3f} "
-            f"ep_games_played: {m.batch_games_played} "
             f"time to sample: {sample_time_taken} "
             f"time to update network: {update_time_taken}"
         )
         train_logger.info(epoch_summary)
-        train_logger.info(
-            f"num_of_cards_played_summary: {Counter(m.num_of_cards_played).most_common()}"
-        )
-
-        ep_returns.append(np.mean(m.batch_rets))
-
-        train_logger.info(f"event counter: {m.events_counter}")
+        train_logger.info(m.summary())
+        train_logger.info(m.cards_played_summary())
 
 
 def merge_result(
@@ -292,26 +299,16 @@ def train_parallel(epoch=50, buffer_size=4000, lr=0.0001):
             epoch_summary = (
                 f"epoch: {i_episode + 1}, policy_loss: {policy_loss:.3f}, "
                 f"value_loss: {value_loss:.3f}, "
-                f"return: {np.mean(m.batch_rets):.3f}, "
-                f"min returns: {np.min(m.batch_rets)}, "
-                f"med returns: {np.median(m.batch_rets)}, "
-                f"ep_len: {np.mean(m.batch_lens):.3f}, "
-                f"ep_hands_played: {np.mean(m.batch_hands_played):.3f} "
-                f"ep_games_played: {m.batch_games_played} "
-                f"time to sample: {sample_time_taken} "
-                f"time to update network: {update_time_taken}"
+                f"time to sample: {sample_time_taken:.3f} "
+                f"time to update network: {update_time_taken:.3f}"
             )
             train_logger.info(epoch_summary)
+            train_logger.info(m.summary())
+            train_logger.info(m.cards_played_summary())
 
             ep_returns.append(np.mean(m.batch_rets))
             min_ep_returns.append(np.min(m.batch_rets))
             med_ep_ret.append(np.median(m.batch_rets))
-            train_logger.info(
-                f"num_of_cards_played_summary: {Counter(m.num_of_cards_played).most_common()}, "
-                f"num_of_valid_cards_played_summary: {Counter(m.num_of_valid_card_played).most_common()}"
-            )
-
-            train_logger.info(f"event counter: {m.events_counter}")
 
         plot_data = {
             "min_ret": min_ep_returns,
@@ -370,7 +367,7 @@ def play_with_cmd():
 if __name__ == "__main__":
     config_gpu()
     start_time = time.time()
-    train()
-    # train_parallel(epoch=2000)
+    # train()
+    train_parallel(epoch=1000)
     # play_with_cmd()
     print(f"Time taken: {time.time() - start_time:.3f} seconds")
