@@ -62,8 +62,6 @@ class SampleMetric:
 
     def track_action(self, action: List[int], rewards):
         num_of_cards = sum(action)
-        if rewards >= 0:
-            self.num_of_valid_card_played.append(num_of_cards)
 
         self.num_of_cards_played.append(num_of_cards)
 
@@ -93,10 +91,7 @@ class SampleMetric:
         )
 
     def cards_played_summary(self) -> str:
-        return (
-            f"num_of_cards_played_summary: {Counter(self.num_of_cards_played).most_common()}, "
-            f"num_of_valid_cards_played_summary: {Counter(self.num_of_valid_card_played).most_common()}, "
-        )
+        return f"num_of_cards_played_summary: {Counter(self.num_of_cards_played).most_common()}, "
 
 
 def create_player_buf(num_of_player=4) -> Dict[int, PlayerBuffer]:
@@ -269,20 +264,47 @@ class ExperimentConfig:
 class ExperimentLogger:
     def __init__(self):
         self.metrics = []
+        self.policy_loss = []
+        self.value_loss = []
+        self.sample_time = []
+        self.update_time = []
 
-    def store(self, m: SampleMetric):
+    def store(
+        self,
+        m: SampleMetric,
+        policy_loss,
+        value_loss,
+        sample_time_taken,
+        update_time_taken,
+    ):
         self.metrics.append(m)
+        self.policy_loss.append(policy_loss)
+        self.value_loss.append(value_loss)
+        self.sample_time.append(sample_time_taken)
+        self.update_time.append(update_time_taken)
 
-    def flush(self, root_dir: str, config: ExperimentConfig):
+    def flush(self, root_dir: str, config: ExperimentConfig, exp_st: int):
         new_dir = datetime.now().strftime("%d_%b_%Y_%H_%M_%S")
 
         new_dir_path = f"./{root_dir}/{new_dir}"
         os.makedirs(new_dir_path)
 
+        data = asdict(config)
+        data["time_taken"] = time.time() - exp_st
         # As we are using all scalar values, we need to pass an index
         # wrapping the dict in a list means the index of the values is 0
-        df = pd.DataFrame([asdict(config)])
-        df.to_csv(f"{new_dir_path}/config.csv", index=False)
+        config_df = pd.DataFrame([data])
+        config_df.to_csv(f"{new_dir_path}/config.csv", index=False)
+
+        training_df = pd.DataFrame(
+            {
+                "policy_loss": self.policy_loss,
+                "value_loss": self.value_loss,
+                "sample_time": self.sample_time,
+                "update_time": self.update_time,
+            }
+        )
+        training_df.to_csv(f"{new_dir_path}/training.csv", index=False)
 
         min_ep_ret = [np.min(m.batch_rets) for m in self.metrics]
         avg_ep_ret = [np.mean(m.batch_rets) for m in self.metrics]
@@ -299,6 +321,7 @@ class ExperimentLogger:
 
 
 def train_parallel(config: ExperimentConfig):
+    exp_st = time.time()
     mp.set_start_method("spawn")
 
     # setting up worker for sampling
@@ -316,7 +339,6 @@ def train_parallel(config: ExperimentConfig):
         bot = SimplePPOBot(env.reset(), lr=config.lr)
         experiment_log = ExperimentLogger()
 
-        ep_returns, min_ep_returns, med_ep_ret = [], [], []
         for i_episode in range(config.epoch):
             sample_start_time = time.time()
 
@@ -351,9 +373,11 @@ def train_parallel(config: ExperimentConfig):
             train_logger.info(m.summary())
             train_logger.info(m.cards_played_summary())
 
-            experiment_log.store(m)
+            experiment_log.store(
+                m, policy_loss, value_loss, sample_time_taken, update_time_taken
+            )
 
-        experiment_log.flush("./experiments", config)
+        experiment_log.flush("./experiments", config, exp_st)
         # bot.save("save")
     finally:
         print("stopping workers")
@@ -405,7 +429,7 @@ def play_with_cmd():
 if __name__ == "__main__":
     config_gpu()
     start_time = time.time()
-    train()
-    # train_parallel(ExperimentConfig())
+    # train()
+    train_parallel(ExperimentConfig())
     # play_with_cmd()
     print(f"Time taken: {time.time() - start_time:.3f} seconds")
