@@ -293,12 +293,13 @@ class PlayerBuffer:
 
 
 class PPOAction:
-    def __init__(self, raw_action, action_cat, obs_array, action_mask, logp):
+    def __init__(self, raw_action, action_cat, obs_array, action_mask, logp, cards):
         self.obs_arr = obs_array
         self.raw = raw_action
         self.cat = action_cat
         self.mask = action_mask
         self.logp = logp
+        self.cards = cards
 
 
 class GameBuffer(PPOBufferInterface):
@@ -396,14 +397,17 @@ class SimplePPOBot(BigTwoBot):
         action_tensor, logp_tensor = self.agent.action(obs=obs_array, mask=action_mask)
         action_cat = action_tensor.numpy()
 
-        action = self.action_cat_mapping[action_cat]
+        raw = self.action_cat_mapping[action_cat]
+
+        cards = [c for idx, c in enumerate(observation.your_hands) if raw[idx] == 1]
 
         return PPOAction(
             obs_array=obs_array,
-            raw_action=action,
+            raw_action=raw,
             action_cat=action_cat,
             action_mask=action_mask,
             logp=logp_tensor.numpy(),
+            cards=cards,
         )
 
     def predict_value(self, observations):
