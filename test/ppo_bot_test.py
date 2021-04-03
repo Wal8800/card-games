@@ -1,11 +1,11 @@
 import unittest
 
 from bigtwo.bigtwo import BigTwoHand, BigTwoObservation, BigTwo
-from gamerunner.ppo_runner import create_action_cat_mapping, generate_action_mask
+from gamerunner.ppo_bot import create_action_cat_mapping, generate_action_mask
 from playingcards.card import Card, Suit, Rank
 
 
-class TestPPORunner(unittest.TestCase):
+class TestPPOBot(unittest.TestCase):
     def test_generate_action_mask_single(self):
         action_cat_mapping, idx_cat_mapping = create_action_cat_mapping()
 
