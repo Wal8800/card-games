@@ -118,6 +118,7 @@ class BigTwo:
     def __init__(self):
         self.player_hands = self.__create_player_hand()
         self.state: List[Tuple[int, List[Card]]] = []
+        self.past_actions: List[Tuple[int, List[Card]]] = []
         self.current_player = None
         self.player_last_played = None
         self.n = 4
@@ -387,6 +388,8 @@ class BigTwo:
                     return self._current_observation(self.current_player), -1, False
                 action.append(player_hand[idx])
 
+        self.past_actions.append((self.current_player, action))
+
         if len(action) == 0:
             # can't skip on the first turn of the game or when everyone else skipped already
             if self.is_first_turn() or self.player_last_played == self.current_player:
@@ -404,10 +407,7 @@ class BigTwo:
             if self.current_player > self.number_of_players() - 1:
                 self.current_player = 0
 
-            reward = -1
-            # if self.have_playable_cards(self.get_current_combination(), player_hand):
-            #     reward = -1
-
+            reward = -2
             return self._current_observation(previous_player), reward, False
 
         if not BigTwo.is_valid_card_combination(action):
@@ -438,6 +438,7 @@ class BigTwo:
     def reset(self) -> BigTwoObservation:
         self.player_hands = self.__create_player_hand()
         self.state = []
+        self.past_actions = []
         self.event_count = {}
 
         self.current_player = None
@@ -616,8 +617,6 @@ class BigTwo:
 
         reward = -1
         game_finished = len(self.player_hands[previous_player]) == 0
-        if game_finished:
-            reward = 0
         return self._current_observation(previous_player), reward, game_finished
 
     def __create_player_hand(self) -> List[BigTwoHand]:
