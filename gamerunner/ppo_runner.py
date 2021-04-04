@@ -163,9 +163,6 @@ def collect_data_from_env(
                     last_obs_arr = np.array([bot.transform_obs(last_obs)])
                     last_val = bot.predict_value(last_obs_arr)
 
-                if done and player_number != obs.current_player:
-                    last_val = -100
-
                 player_buf.finish_path(estimated_values, last_val)
                 buf.add(player_buf)
 
@@ -257,7 +254,7 @@ def merge_result(
 
 @dataclass
 class ExperimentConfig:
-    epoch: int = 40
+    epoch: int = 500
     buffer_size: int = 4000
     lr: float = 0.0001
     mini_batch_size: int = 512

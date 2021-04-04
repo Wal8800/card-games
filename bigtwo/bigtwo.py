@@ -115,6 +115,8 @@ class BigTwo:
 
     UNKNOWN_PLAYER = 5
 
+    INVALID_MOVE_REWARD = 0
+
     def __init__(self):
         self.player_hands = self.__create_player_hand()
         self.state: List[Tuple[int, List[Card]]] = []
@@ -378,14 +380,22 @@ class BigTwo:
         # check if raw_action is valid
         if len(raw_action) != 13:
             self.__increment_event("invalid raw action")
-            return self._current_observation(self.current_player), -1, False
+            return (
+                self._current_observation(self.current_player),
+                BigTwo.INVALID_MOVE_REWARD,
+                False,
+            )
 
         player_hand = self.player_hands[self.current_player]
         action = []
         for idx, value in enumerate(raw_action):
             if value == 1:
                 if idx >= len(player_hand):
-                    return self._current_observation(self.current_player), -1, False
+                    return (
+                        self._current_observation(self.current_player),
+                        BigTwo.INVALID_MOVE_REWARD,
+                        False,
+                    )
                 action.append(player_hand[idx])
 
         self.past_actions.append((self.current_player, action))
@@ -399,7 +409,11 @@ class BigTwo:
                     else "everyone else skipped"
                 )
                 self.__increment_event(event)
-                return self._current_observation(self.current_player), -1, False
+                return (
+                    self._current_observation(self.current_player),
+                    BigTwo.INVALID_MOVE_REWARD,
+                    False,
+                )
 
             # skipping
             previous_player = self.current_player
@@ -407,18 +421,26 @@ class BigTwo:
             if self.current_player > self.number_of_players() - 1:
                 self.current_player = 0
 
-            reward = -2
-            return self._current_observation(previous_player), reward, False
+            # 0 rewards for skipping
+            return self._current_observation(previous_player), 0, False
 
         if not BigTwo.is_valid_card_combination(action):
             self.__increment_event("invalid combination")
-            return self._current_observation(self.current_player), -1, False
+            return (
+                self._current_observation(self.current_player),
+                BigTwo.INVALID_MOVE_REWARD,
+                False,
+            )
 
         if self.is_first_turn() or self.player_last_played == self.current_player:
             if self.is_first_turn() and not have_diamond_three(action):
                 # always need to play diamond three first
                 self.__increment_event("play diamond three")
-                return self._current_observation(self.current_player), -1, False
+                return (
+                    self._current_observation(self.current_player),
+                    BigTwo.INVALID_MOVE_REWARD,
+                    False,
+                )
             return self._apply_action(action)
 
         # there are cards played already
@@ -428,7 +450,11 @@ class BigTwo:
                 self.__increment_event("smaller combinations")
             else:
                 self.__increment_event("unequal number of cards")
-            return self._current_observation(self.current_player), -1, False
+            return (
+                self._current_observation(self.current_player),
+                BigTwo.INVALID_MOVE_REWARD,
+                False,
+            )
 
         return self._apply_action(action)
 
@@ -615,7 +641,7 @@ class BigTwo:
             self.current_player = 0
         self.player_last_played = previous_player
 
-        reward = -1
+        reward = len(action)
         game_finished = len(self.player_hands[previous_player]) == 0
         return self._current_observation(previous_player), reward, game_finished
 
