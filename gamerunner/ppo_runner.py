@@ -58,6 +58,7 @@ class SampleMetric:
         self.num_of_cards_played = []
         self.num_of_valid_card_played = []
         self.game_history = []
+        self.action_history = []
         self.batch_games_played = 0
 
     def track_action(self, action: List[int], rewards):
@@ -72,6 +73,7 @@ class SampleMetric:
         if done:
             self.batch_games_played += 1
         self.game_history.append(env.state)
+        self.action_history.append(env.past_actions)
 
         self.events_counter += Counter(env.event_count)
 
@@ -161,6 +163,9 @@ def collect_data_from_env(
                     last_obs_arr = np.array([bot.transform_obs(last_obs)])
                     last_val = bot.predict_value(last_obs_arr)
 
+                if done and player_number != obs.current_player:
+                    last_val = -100
+
                 player_buf.finish_path(estimated_values, last_val)
                 buf.add(player_buf)
 
@@ -243,6 +248,7 @@ def merge_result(
         result_metric.batch_hands_played += m.batch_hands_played
         result_metric.num_of_cards_played += m.num_of_cards_played
         result_metric.game_history += [h for h in m.game_history if len(h) > 0]
+        result_metric.action_history += [h for h in m.action_history if len(h) > 0]
         result_metric.batch_games_played += m.batch_games_played
         result_metric.num_of_valid_card_played += m.num_of_valid_card_played
 
@@ -251,7 +257,7 @@ def merge_result(
 
 @dataclass
 class ExperimentConfig:
-    epoch: int = 5
+    epoch: int = 40
     buffer_size: int = 4000
     lr: float = 0.0001
     mini_batch_size: int = 512
@@ -284,7 +290,7 @@ class ExperimentLogger:
         self.update_time.append(update_time_taken)
 
     def flush(self, root_dir: str, config: ExperimentConfig, exp_st: int):
-        new_dir = datetime.now().strftime("%d_%b_%Y_%H_%M_%S")
+        new_dir = datetime.now().strftime("%Y_%m_%d_%H_%M_%S")
 
         new_dir_path = f"./{root_dir}/{new_dir}"
         os.makedirs(new_dir_path)
@@ -318,6 +324,16 @@ class ExperimentLogger:
         ax = sns.lineplot(data=plot_data)
         figure = ax.get_figure()
         figure.savefig(f"{new_dir_path}/returns_plot.png", dpi=400)
+
+        with open(f"{new_dir_path}/game_history.txt", "w") as f:
+            for hist in self.metrics[-1].game_history:
+                f.write(str(hist))
+                f.write("\n")
+
+        with open(f"{new_dir_path}/action_history.txt", "w") as f:
+            for hist in self.metrics[-1].action_history:
+                f.write(str(hist))
+                f.write("\n")
 
 
 def train_parallel(config: ExperimentConfig):
