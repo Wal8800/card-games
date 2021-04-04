@@ -5,6 +5,7 @@ lint:
 	pylint ./bigtwo \
 	pylint ./playingcards
 
+
 setup:
 	sudo apt-get update \
 	sudo apt install python3 \
