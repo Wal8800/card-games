@@ -139,7 +139,7 @@ def collect_data_from_env(
         # storing the trajectory per players because the awards is per player not sum of all players.
         player_ep_rews[obs.current_player].append(reward)
         player_bufs[obs.current_player].store(
-            action.obs_arr, action.cat, reward, action.logp, action.mask
+            action.transformed_obs, action.cat, reward, action.logp, action.mask
         )
 
         epoch_ended = t == buffer_size - 1
@@ -254,7 +254,7 @@ def merge_result(
 
 @dataclass
 class ExperimentConfig:
-    epoch: int = 500
+    epoch: int = 10000
     buffer_size: int = 4000
     lr: float = 0.0001
     mini_batch_size: int = 512
@@ -442,7 +442,7 @@ def play_with_cmd():
 if __name__ == "__main__":
     config_gpu()
     start_time = time.time()
-    # train()
-    train_parallel(ExperimentConfig())
+    train()
+    # train_parallel(ExperimentConfig())
     # play_with_cmd()
     print(f"Time taken: {time.time() - start_time:.3f} seconds")
