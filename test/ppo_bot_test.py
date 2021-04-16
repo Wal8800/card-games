@@ -1,7 +1,12 @@
 import unittest
 
 from bigtwo.bigtwo import BigTwoHand, BigTwoObservation, BigTwo
-from gamerunner.ppo_bot import create_action_cat_mapping, generate_action_mask
+from gamerunner.ppo_bot import (
+    create_action_cat_mapping,
+    generate_action_mask,
+    EmbeddedInputBot,
+    SimplePPOBot,
+)
 from playingcards.card import Card, Suit, Rank
 
 
@@ -125,3 +130,17 @@ class TestPPOBot(unittest.TestCase):
 
         # can play combination including diamond three
         self.assertTrue(mask[92])
+
+    def test_embedded_bot_action(self):
+        env = BigTwo()
+
+        init_obs = env.reset()
+        bot = EmbeddedInputBot(init_obs)
+        bot.action(init_obs)
+
+    def test_simple_bot_action(self):
+        env = BigTwo()
+
+        init_obs = env.reset()
+        bot = SimplePPOBot(init_obs)
+        bot.action(init_obs)
