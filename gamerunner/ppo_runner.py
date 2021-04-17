@@ -8,16 +8,24 @@ from collections import Counter
 from dataclasses import dataclass, asdict
 from datetime import datetime
 from multiprocessing import Queue, Process
-from typing import Dict, List, Tuple
+from typing import Dict, List, Tuple, Mapping, Any
 
 import numpy as np
 import pandas as pd
 import seaborn as sns
 import tensorflow as tf
+from algorithm.agent import PPOBufferInterface
 
 from bigtwo.bigtwo import BigTwo
 from gamerunner.cmd_line_bot import CommandLineBot
-from gamerunner.ppo_bot import SimplePPOBot, PlayerBuffer, GameBuffer
+from gamerunner.ppo_bot import (
+    SimplePPOBot,
+    GameBuffer,
+    PlayerBuffer,
+    EmbeddedInputBot,
+    MultiInputGameBuffer,
+    MultiInputPlayerBuffer,
+)
 
 FORMATTER = logging.Formatter("%(asctime)s — %(name)s — %(levelname)s — %(message)s")
 
@@ -47,6 +55,34 @@ def get_logger(logger_name, log_level):
     logger.setLevel(log_level)
     logger.addHandler(get_console_handler())
     return logger
+
+
+def create_player_buf(player_buf_class) -> Dict[int, Any]:
+    return {i: player_buf_class() for i in range(4)}
+
+
+def create_player_rew_buf(num_of_player=4) -> Dict[int, List[int]]:
+    return {i: [] for i in range(num_of_player)}
+
+
+@dataclass
+class ExperimentConfig:
+    epoch: int = 20
+    buffer_size: int = 4000
+    lr: float = 0.0001
+    mini_batch_size: int = 1024
+
+    num_of_worker: int = 10
+
+    clip_ratio: float = 0.3
+
+    # bot_class = SimplePPOBot
+    # game_buf_class = GameBuffer
+    # player_buf_class = PlayerBuffer
+
+    bot_class = EmbeddedInputBot
+    game_buf_class = MultiInputGameBuffer
+    player_buf_class = MultiInputPlayerBuffer
 
 
 class SampleMetric:
@@ -95,173 +131,28 @@ class SampleMetric:
     def cards_played_summary(self) -> str:
         return f"num_of_cards_played_summary: {Counter(self.num_of_cards_played).most_common()}, "
 
+    def __add__(self, other):
+        result = SampleMetric()
 
-def create_player_buf(num_of_player=4) -> Dict[int, PlayerBuffer]:
-    return {i: PlayerBuffer() for i in range(num_of_player)}
-
-
-def create_player_rew_buf(num_of_player=4) -> Dict[int, List[int]]:
-    return {i: [] for i in range(num_of_player)}
-
-
-def sample_worker(input_queue: Queue, output: Queue):
-    config_gpu()
-
-    for policy_weight, value_weight, buffer_size in iter(input_queue.get, "STOP"):
-        buf, m = collect_data_from_env(policy_weight, value_weight, buffer_size)
-        output.put((buf, m))
-
-
-def collect_data_from_env(
-    policy_weight, value_weight, buffer_size=4000
-) -> Tuple[GameBuffer, SampleMetric]:
-    env = BigTwo()
-
-    obs = env.reset()
-
-    bot = SimplePPOBot(obs)
-    bot.set_weights(policy_weight, value_weight)
-
-    player_bufs = create_player_buf()
-    player_ep_rews = create_player_rew_buf()
-
-    sample_metric = SampleMetric()
-
-    buf = GameBuffer()
-
-    for t in range(buffer_size):
-        obs = env.get_current_player_obs()
-        action = bot.action(obs)
-
-        new_obs, reward, done = env.step(action.raw)
-        sample_metric.track_action(action.raw, reward)
-
-        # storing the trajectory per players because the awards is per player not sum of all players.
-        player_ep_rews[obs.current_player].append(reward)
-        player_bufs[obs.current_player].store(
-            action.transformed_obs, action.cat, reward, action.logp, action.mask
+        result.events_counter = self.events_counter + other.events_counter
+        result.batch_lens = self.batch_lens + other.batch_lens
+        result.batch_rets = self.batch_lens + other.batch_rets
+        result.batch_hands_played = self.batch_hands_played + other.batch_hands_played
+        result.num_of_cards_played = (
+            self.num_of_cards_played + other.num_of_cards_played
+        )
+        result.game_history = self.game_history + [
+            h for h in other.game_history if len(h) > 0
+        ]
+        result.action_history = self.action_history + [
+            h for h in other.action_history if len(h) > 0
+        ]
+        result.batch_games_played = self.batch_games_played + other.batch_games_played
+        result.num_of_valid_card_played = (
+            self.num_of_valid_card_played + other.num_of_valid_card_played
         )
 
-        epoch_ended = t == buffer_size - 1
-        if done or epoch_ended:
-            ep_ret, ep_len = 0, 0
-            # add to buf
-            # process each player buf then add it to the big one
-            for player_number, player_buf in player_bufs.items():
-                ep_rews = player_ep_rews[player_number]
-                ep_ret += sum(ep_rews)
-                ep_len += len(ep_rews)
-
-                if player_buf.is_empty():
-                    continue
-
-                estimated_values = bot.predict_value(player_buf.get_curr_path())
-
-                last_val = 0
-                if not done and epoch_ended:
-                    last_obs = env.get_player_obs(player_number)
-                    last_obs_arr = np.array([bot.transform_obs(last_obs)])
-                    last_val = bot.predict_value(last_obs_arr)
-
-                player_buf.finish_path(estimated_values, last_val)
-                buf.add(player_buf)
-
-            sample_metric.track_rewards(ep_ret, ep_len)
-            sample_metric.track_env(env, done)
-
-            # reset game
-            env.reset()
-            player_bufs = create_player_buf()
-            player_ep_rews = create_player_rew_buf()
-
-    return buf, sample_metric
-
-
-def create_worker_task(num_cpu, policy_weight, value_weight, buffer_size):
-    chunk_buffer_size = buffer_size // num_cpu
-
-    args = zip(
-        itertools.repeat(policy_weight, num_cpu),
-        itertools.repeat(value_weight, num_cpu),
-        itertools.repeat(chunk_buffer_size, num_cpu),
-    )
-
-    return args
-
-
-def train(epoch=5, lr=0.001):
-    train_logger = get_logger("train_ppo", log_level=logging.INFO)
-    env = BigTwo()
-
-    bot = SimplePPOBot(env.reset(), lr=lr)
-
-    for i_episode in range(epoch):
-        sample_start_time = time.time()
-
-        policy_weight, value_weight = bot.get_weights()
-
-        buf, m = collect_data_from_env(policy_weight, value_weight)
-
-        sample_time_taken = time.time() - sample_start_time
-
-        update_start_time = time.time()
-        policy_loss, value_loss = bot.update(buf, mini_batch_size=512)
-
-        update_time_taken = time.time() - update_start_time
-
-        epoch_summary = (
-            f"epoch: {i_episode + 1}, policy_loss: {policy_loss:.3f}, "
-            f"value_loss: {value_loss:.3f}, "
-            f"time to sample: {sample_time_taken} "
-            f"time to update network: {update_time_taken}"
-        )
-        train_logger.info(epoch_summary)
-        train_logger.info(m.summary())
-        train_logger.info(m.cards_played_summary())
-
-
-def merge_result(
-    results: List[Tuple[GameBuffer, SampleMetric]]
-) -> Tuple[GameBuffer, SampleMetric]:
-    result_buf, result_metric = None, None
-
-    for buf, m in results:
-        if result_buf is None:
-            result_buf = buf
-            result_metric = m
-            continue
-
-        result_buf.obs_buf = np.append(result_buf.obs_buf, buf.obs_buf, axis=0)
-        result_buf.act_buf = np.append(result_buf.act_buf, buf.act_buf, axis=0)
-        result_buf.adv_buf = np.append(result_buf.adv_buf, buf.adv_buf, axis=0)
-        result_buf.rew_buf = np.append(result_buf.rew_buf, buf.rew_buf, axis=0)
-        result_buf.ret_buf = np.append(result_buf.ret_buf, buf.ret_buf, axis=0)
-        result_buf.logp_buf = np.append(result_buf.logp_buf, buf.logp_buf, axis=0)
-        result_buf.mask_buf = np.append(result_buf.mask_buf, buf.mask_buf, axis=0)
-
-        result_metric.events_counter += m.events_counter
-        result_metric.batch_lens += m.batch_lens
-        result_metric.batch_rets += m.batch_rets
-        result_metric.batch_hands_played += m.batch_hands_played
-        result_metric.num_of_cards_played += m.num_of_cards_played
-        result_metric.game_history += [h for h in m.game_history if len(h) > 0]
-        result_metric.action_history += [h for h in m.action_history if len(h) > 0]
-        result_metric.batch_games_played += m.batch_games_played
-        result_metric.num_of_valid_card_played += m.num_of_valid_card_played
-
-    return result_buf, result_metric
-
-
-@dataclass
-class ExperimentConfig:
-    epoch: int = 10000
-    buffer_size: int = 4000
-    lr: float = 0.0001
-    mini_batch_size: int = 512
-
-    num_of_worker: int = 10
-
-    clip_ratio: float = 0.3
+        return result
 
 
 class ExperimentLogger:
@@ -286,7 +177,7 @@ class ExperimentLogger:
         self.sample_time.append(sample_time_taken)
         self.update_time.append(update_time_taken)
 
-    def flush(self, root_dir: str, config: ExperimentConfig, exp_st: int):
+    def flush(self, root_dir: str, config: ExperimentConfig, exp_st: float):
         new_dir = datetime.now().strftime("%Y_%m_%d_%H_%M_%S")
 
         new_dir_path = f"./{root_dir}/{new_dir}"
@@ -294,6 +185,7 @@ class ExperimentLogger:
 
         data = asdict(config)
         data["time_taken"] = time.time() - exp_st
+        data["bot_class_name"] = config.bot_class.__name__
         # As we are using all scalar values, we need to pass an index
         # wrapping the dict in a list means the index of the values is 0
         config_df = pd.DataFrame([data])
@@ -333,6 +225,158 @@ class ExperimentLogger:
                 f.write("\n")
 
 
+def sample_worker(input_queue: Queue, output: Queue):
+    config_gpu()
+
+    for policy_weight, value_weight, config, buffer_size in iter(
+        input_queue.get, "STOP"
+    ):
+        buf, m = collect_data_from_env(policy_weight, value_weight, config, buffer_size)
+        output.put((buf, m))
+
+
+def collect_data_from_env(
+    policy_weight, value_weight, config: ExperimentConfig, buffer_size=4000
+) -> Tuple[PPOBufferInterface, SampleMetric]:
+    env = BigTwo()
+
+    obs = env.reset()
+
+    bot = config.bot_class(obs)
+    bot.set_weights(policy_weight, value_weight)
+
+    player_bufs = create_player_buf(config.player_buf_class)
+    buf = config.game_buf_class()
+
+    player_ep_rews = create_player_rew_buf()
+
+    sample_metric = SampleMetric()
+
+    for t in range(buffer_size):
+        obs = env.get_current_player_obs()
+        action = bot.action(obs)
+
+        new_obs, reward, done = env.step(action.raw)
+        sample_metric.track_action(action.raw, reward)
+
+        # storing the trajectory per players because the awards is per player not sum of all players.
+        player_ep_rews[obs.current_player].append(reward)
+        player_bufs[obs.current_player].store(
+            action.transformed_obs, action.cat, reward, action.logp, action.mask
+        )
+
+        epoch_ended = t == buffer_size - 1
+        if done or epoch_ended:
+            ep_ret, ep_len = 0, 0
+            # add to buf
+            # process each player buf then add it to the big one
+            for player_number, player_buf in player_bufs.items():
+                ep_rews = player_ep_rews[player_number]
+                ep_ret += sum(ep_rews)
+                ep_len += len(ep_rews)
+
+                if player_buf.is_empty():
+                    continue
+
+                estimated_values = bot.predict_value(player_buf.get_curr_path())
+
+                last_val = 0
+                if not done and epoch_ended:
+                    last_obs = env.get_player_obs(player_number)
+                    transformed_obs = bot.transform_obs(last_obs)
+                    if not isinstance(transformed_obs, Mapping):
+                        transformed_obs = np.array([transformed_obs])
+                    last_val = bot.predict_value(transformed_obs)
+
+                player_buf.finish_path(estimated_values.numpy().flatten(), last_val)
+                buf.add(player_buf)
+
+            sample_metric.track_rewards(ep_ret, ep_len)
+            sample_metric.track_env(env, done)
+
+            # reset game
+            env.reset()
+            player_bufs = create_player_buf(config.player_buf_class)
+            player_ep_rews = create_player_rew_buf()
+
+    return buf, sample_metric
+
+
+def create_worker_task(num_cpu, policy_weight, value_weight, config: ExperimentConfig):
+    chunk_buffer_size = config.buffer_size // num_cpu
+
+    args = zip(
+        itertools.repeat(policy_weight, num_cpu),
+        itertools.repeat(value_weight, num_cpu),
+        itertools.repeat(config, num_cpu),
+        itertools.repeat(chunk_buffer_size, num_cpu),
+    )
+
+    return args
+
+
+def train():
+    exp_st = time.time()
+    train_logger = get_logger("train_ppo", log_level=logging.INFO)
+    env = BigTwo()
+
+    config = ExperimentConfig()
+    config.epoch = 10
+    config.lr = 0.0001
+    config.mini_batch_size = 1024
+
+    bot = config.bot_class(env.reset(), lr=config.lr)
+    experiment_log = ExperimentLogger()
+    for i_episode in range(config.epoch):
+        sample_start_time = time.time()
+
+        policy_weight, value_weight = bot.get_weights()
+
+        buf, m = collect_data_from_env(policy_weight, value_weight, config)
+
+        sample_time_taken = time.time() - sample_start_time
+
+        update_start_time = time.time()
+        policy_loss, value_loss = bot.update(
+            buf, mini_batch_size=config.mini_batch_size
+        )
+
+        update_time_taken = time.time() - update_start_time
+
+        epoch_summary = (
+            f"epoch: {i_episode + 1}, policy_loss: {policy_loss:.3f}, "
+            f"value_loss: {value_loss:.3f}, "
+            f"time to sample: {sample_time_taken} "
+            f"time to update network: {update_time_taken}"
+        )
+        train_logger.info(epoch_summary)
+        train_logger.info(m.summary())
+        train_logger.info(m.cards_played_summary())
+
+        experiment_log.store(
+            m, policy_loss, value_loss, sample_time_taken, update_time_taken
+        )
+
+    experiment_log.flush("./experiments", config, exp_st)
+
+
+def merge_result(
+    results: List[Tuple[GameBuffer, SampleMetric]]
+) -> Tuple[GameBuffer, SampleMetric]:
+    result_buf, result_metric = None, None
+
+    for buf, m in results:
+        if result_buf is None:
+            result_buf = buf
+            result_metric = m
+            continue
+
+        result_buf += buf
+        result_metric += m
+
+    return result_buf, result_metric
+
+
 def train_parallel(config: ExperimentConfig):
     exp_st = time.time()
     mp.set_start_method("spawn")
@@ -349,7 +393,7 @@ def train_parallel(config: ExperimentConfig):
     try:
         train_logger = get_logger("train_ppo", log_level=logging.INFO)
         env = BigTwo()
-        bot = SimplePPOBot(env.reset(), lr=config.lr)
+        bot = config.bot_class(env.reset(), lr=config.lr)
         experiment_log = ExperimentLogger()
 
         for i_episode in range(config.epoch):
@@ -358,7 +402,7 @@ def train_parallel(config: ExperimentConfig):
             policy_weight, value_weight = bot.get_weights()
 
             tasks = create_worker_task(
-                NUMBER_OF_PROCESSES, policy_weight, value_weight, config.buffer_size
+                NUMBER_OF_PROCESSES, policy_weight, value_weight, config
             )
             for task in tasks:
                 task_queue.put(task)
