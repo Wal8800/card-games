@@ -1,5 +1,5 @@
 import itertools
-from typing import Dict, List, Tuple
+from typing import Dict, List, Tuple, Mapping
 
 import numpy as np
 import tensorflow.keras as keras
@@ -292,16 +292,46 @@ class PlayerBuffer:
         self.ret_buf = discounted_sum_of_rewards(rews, self.gamma)[:-1]
 
 
-class PPOAction:
-    def __init__(
-        self, raw_action, action_cat, transformed_obs, action_mask, logp, cards
-    ):
-        self.transformed_obs = transformed_obs
-        self.raw = raw_action
-        self.cat = action_cat
-        self.mask = action_mask
-        self.logp = logp
-        self.cards = cards
+class MultiInputPlayerBuffer:
+    def __init__(self, gamma=0.99, lam=0.95):
+        self.obs_buf = {}
+        self.act_buf = []
+        self.adv_buf = []
+        self.rew_buf = []
+        self.ret_buf = []
+        self.logp_buf = []
+        self.mask_buf = []
+        self.gamma, self.lam = gamma, lam
+
+    def store(self, obs, act, rew, logp, mask):
+        assert isinstance(obs, Mapping)
+        if self.is_empty():
+            self.obs_buf = obs
+        else:
+            self.obs_buf = {k: v + obs[k] for k, v in self.obs_buf.items()}
+
+        self.act_buf.append(act)
+        self.rew_buf.append(rew)
+        self.logp_buf.append(logp)
+        self.mask_buf.append(mask)
+
+    def get_curr_path(self):
+        return self.obs_buf
+
+    def is_empty(self):
+        return len(self.obs_buf) == 0
+
+    def finish_path(self, estimated_vals: np.array, last_val=0.0):
+        rews = np.append(self.rew_buf, last_val)
+
+        # the next two lines implement GAE-Lambda advantage calculation
+        # δVt = rt + γV(st+1) − V(st)
+        vals = np.append(estimated_vals, last_val)
+        deltas = rews[:-1] + self.gamma * vals[1:] - vals[:-1]
+        self.adv_buf = discounted_sum_of_rewards(deltas, self.gamma * self.lam)
+
+        # the next line computes rewards-to-go, to be targets for the value function
+        self.ret_buf = discounted_sum_of_rewards(rews, self.gamma)[:-1]
 
 
 class GameBuffer(PPOBufferInterface):
@@ -359,6 +389,99 @@ class GameBuffer(PPOBufferInterface):
             self.ret_buf.astype("float32"),
             self.logp_buf,
         )
+
+    def __add__(self, other):
+        result_buf = GameBuffer()
+        result_buf.obs_buf = np.append(self.obs_buf, other.obs_buf, axis=0)
+        result_buf.act_buf = np.append(self.act_buf, other.act_buf, axis=0)
+        result_buf.adv_buf = np.append(self.adv_buf, other.adv_buf, axis=0)
+        result_buf.rew_buf = np.append(self.rew_buf, other.rew_buf, axis=0)
+        result_buf.ret_buf = np.append(self.ret_buf, other.ret_buf, axis=0)
+        result_buf.logp_buf = np.append(self.logp_buf, other.logp_buf, axis=0)
+        result_buf.mask_buf = np.append(self.mask_buf, other.mask_buf, axis=0)
+
+        return result_buf
+
+
+class MultiInputGameBuffer(PPOBufferInterface):
+    def __init__(self):
+        self.obs_buf: Mapping = {}
+        self.act_buf = None
+        self.adv_buf = None
+        self.rew_buf = None
+        self.ret_buf = None
+        self.logp_buf = None
+        self.mask_buf = None
+
+    def add(self, pbuf: MultiInputPlayerBuffer):
+        if len(self.obs_buf) == 0:
+            self.obs_buf = pbuf.obs_buf
+        else:
+            self.obs_buf = {k: v + pbuf.obs_buf[k] for k, v in self.obs_buf.items()}
+
+        self.act_buf = (
+            np.array(pbuf.act_buf)
+            if self.act_buf is None
+            else np.append(self.act_buf, pbuf.act_buf, axis=0)
+        )
+        self.adv_buf = (
+            pbuf.adv_buf
+            if self.adv_buf is None
+            else np.append(self.adv_buf, pbuf.adv_buf, axis=0)
+        )
+        self.rew_buf = (
+            np.array(pbuf.rew_buf)
+            if self.rew_buf is None
+            else np.append(self.rew_buf, pbuf.rew_buf, axis=0)
+        )
+        self.ret_buf = (
+            pbuf.ret_buf
+            if self.ret_buf is None
+            else np.append(self.ret_buf, pbuf.ret_buf, axis=0)
+        )
+        self.logp_buf = (
+            np.array(pbuf.logp_buf)
+            if self.logp_buf is None
+            else np.append(self.logp_buf, pbuf.logp_buf, axis=0)
+        )
+        self.mask_buf = (
+            np.array(pbuf.mask_buf)
+            if self.mask_buf is None
+            else np.append(self.mask_buf, pbuf.mask_buf, axis=0)
+        )
+
+    def get(self):
+        return (
+            {k: np.array(v) for k, v in self.obs_buf.items()},
+            self.act_buf,
+            self.adv_buf.astype("float32"),
+            self.ret_buf.astype("float32"),
+            self.logp_buf,
+        )
+
+    def __add__(self, other):
+        result_buf = MultiInputGameBuffer()
+        result_buf.obs_buf = {k: v + other.obs_buf[k] for k, v in self.obs_buf.items()}
+        result_buf.act_buf = np.append(self.act_buf, other.act_buf, axis=0)
+        result_buf.adv_buf = np.append(self.adv_buf, other.adv_buf, axis=0)
+        result_buf.rew_buf = np.append(self.rew_buf, other.rew_buf, axis=0)
+        result_buf.ret_buf = np.append(self.ret_buf, other.ret_buf, axis=0)
+        result_buf.logp_buf = np.append(self.logp_buf, other.logp_buf, axis=0)
+        result_buf.mask_buf = np.append(self.mask_buf, other.mask_buf, axis=0)
+
+        return result_buf
+
+
+class PPOAction:
+    def __init__(
+        self, raw_action, action_cat, transformed_obs, action_mask, logp, cards
+    ):
+        self.transformed_obs = transformed_obs
+        self.raw = raw_action
+        self.cat = action_cat
+        self.mask = action_mask
+        self.logp = logp
+        self.cards = cards
 
 
 class SimplePPOBot(BigTwoBot):
@@ -419,11 +542,56 @@ class SimplePPOBot(BigTwoBot):
     def predict_value(self, observations):
         return self.agent.predict_value(observations)
 
-    def update(self, buffer: GameBuffer, mini_batch_size: int):
+    def update(self, buffer, mini_batch_size: int):
         return self.agent.update(buffer, mini_batch_size, mask_buf=buffer.mask_buf)
 
     def transform_obs(self, obs: BigTwoObservation) -> np.ndarray:
         return obs_to_ohe(obs)
+
+
+def create_embedded_input_policy(n_action: int) -> keras.Model:
+    # 52 cards + 1 empty
+    card_dim = 53
+    inputs = []
+    embedded = []
+
+    # current hand + current played cards (13 + 5)
+    num_of_cards = 18
+    for i in range(num_of_cards):
+        obs_inp = layers.Input(shape=(1,), name=f"card_{i}")
+        e = layers.Embedding(card_dim, 2)(obs_inp)
+        e = layers.Flatten()(e)
+        inputs.append(obs_inp)
+
+        embedded.append(e)
+
+    concat = layers.Concatenate(axis=1)(embedded)
+    x = layers.Dense(n_action, activation="relu")(concat)
+    output = layers.Dense(n_action)(x)
+    return keras.Model(inputs=inputs, outputs=output)
+
+
+def create_embedded_input_vf() -> keras.Model:
+    # 52 cards + 1 empty
+    card_dim = 53
+    inputs = []
+    embedded = []
+
+    # current hand + current played cards (13 + 5)
+    num_of_cards = 18
+    for i in range(num_of_cards):
+        obs_inp = layers.Input(shape=(1,), name=f"card_{i}")
+        e = layers.Embedding(card_dim, 2)(obs_inp)
+        e = layers.Flatten()(e)
+        inputs.append(obs_inp)
+
+        embedded.append(e)
+
+    concat = layers.Concatenate(axis=1)(embedded)
+    x = layers.Dense(256, activation="relu")(concat)
+    x = layers.Dense(128, activation="relu")(x)
+    output = layers.Dense(1)(x)
+    return keras.Model(inputs=inputs, outputs=output)
 
 
 class EmbeddedInputBot(SimplePPOBot):
@@ -432,36 +600,38 @@ class EmbeddedInputBot(SimplePPOBot):
     def _create_agent(self, observation: BigTwoObservation, lr=0.0001, clip_ratio=0.3):
         n_action = len(self.action_cat_mapping)
 
-        # 52 cards + 1 empty
-        card_dim = 53
-        inputs = []
-        embedded = []
-
-        # current hand + current played cards (13 + 5)
-        num_of_cards = 18
-        for i in range(num_of_cards):
-            obs_inp = layers.Input(shape=(1,), name=f"card_{i}")
-            e = layers.Embedding(card_dim, 2)(obs_inp)
-            e = layers.Flatten()(e)
-            inputs.append(obs_inp)
-
-            embedded.append(e)
-
-        concat = layers.Concatenate(axis=1)(embedded)
-        x = layers.Dense(256, activation="relu")(concat)
-        x = layers.Dense(512, activation="relu")(x)
-        x = layers.Dense(n_action, activation="relu")(x)
-        output = layers.Dense(n_action)(x)
-        policy = keras.Model(inputs=inputs, outputs=output)
-
         return PPOAgent(
-            policy,
-            get_mlp_vf(123, hidden_units=256),
+            create_embedded_input_policy(n_action),
+            create_embedded_input_vf(),
             "BigTwo",
             n_action,
             policy_lr=lr,
             value_lr=lr,
             clip_ratio=clip_ratio,
+        )
+
+    def action(self, observation: BigTwoObservation) -> PPOAction:
+        transformed_obs = self.transform_obs(observation)
+        action_mask = generate_action_mask(
+            self.action_cat_mapping, self.idx_cat_mapping, observation
+        )
+
+        action_tensor, logp_tensor = self.agent.action(
+            obs=transformed_obs, mask=action_mask
+        )
+        action_cat = action_tensor.numpy()
+
+        raw = self.action_cat_mapping[action_cat]
+
+        cards = [c for idx, c in enumerate(observation.your_hands) if raw[idx] == 1]
+
+        return PPOAction(
+            transformed_obs=transformed_obs,
+            raw_action=raw,
+            action_cat=action_cat,
+            action_mask=action_mask,
+            logp=logp_tensor.numpy(),
+            cards=cards,
         )
 
     def transform_obs(self, obs: BigTwoObservation):
