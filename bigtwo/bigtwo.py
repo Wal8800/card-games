@@ -7,6 +7,22 @@ from gym import spaces
 
 from playingcards.card import Card, Deck, Suit, Rank
 
+straight_rank_order = {
+    Rank.ace: 1,
+    Rank.two: 2,
+    Rank.three: 3,
+    Rank.four: 4,
+    Rank.five: 5,
+    Rank.six: 6,
+    Rank.seven: 7,
+    Rank.eight: 8,
+    Rank.nine: 9,
+    Rank.ten: 10,
+    Rank.jack: 11,
+    Rank.queen: 12,
+    Rank.king: 13,
+}
+
 
 def have_diamond_three(hand):
     for card in hand:
@@ -84,21 +100,6 @@ def find_combinations_from_cards(input_cards: List[Card]):
             current_list = combinations.get(BigTwo.FULL_HOUSE, []) + full_house
             combinations[BigTwo.FULL_HOUSE] = current_list
 
-    straight_rank_order = {
-        Rank.ace: 1,
-        Rank.two: 2,
-        Rank.three: 3,
-        Rank.four: 4,
-        Rank.five: 5,
-        Rank.six: 6,
-        Rank.seven: 7,
-        Rank.eight: 8,
-        Rank.nine: 9,
-        Rank.ten: 10,
-        Rank.jack: 11,
-        Rank.queen: 12,
-        Rank.king: 13,
-    }
     sorted_ranks = sorted(list(rank_map.keys()), key=lambda r: straight_rank_order[r])
 
     if len(sorted_ranks) < 5:
@@ -379,35 +380,35 @@ class BigTwo:
 
     @staticmethod
     def is_straight(cards: List[Card]) -> bool:
-        rank_order = BigTwo.rank_order()
-        cards = sorted(cards, key=lambda c: rank_order[c.rank])
+        if len(cards) != 5:
+            return False
+
+        rank_map = {}
+        for c in cards:
+            rank_map[c.rank] = rank_map.get(c.rank, 0) + 1
+
+        if len(rank_map.keys()) != 5:
+            return False
+
+        # straight_rank_order starts from ace, two, ... to king
+        sorted_rank = sorted(rank_map.keys(), key=lambda r: straight_rank_order[r])
+
+        first_rank_order = straight_rank_order[sorted_rank[0]]
+        last_rank_order = straight_rank_order[sorted_rank[4]]
+
+        # generaly the first and last card of a straight is 4 rank aparts
+        if first_rank_order + 4 == last_rank_order:
+            return True
 
         """
         special case:
-    
-        3 4 5 ace two
-        3 4 5 6 two
+        ten jack queen king ace
         """
-        for x in range(1, 5):
-            card_one = cards[x - 1]
-            card_two = cards[x]
 
-            card_one_order = rank_order[card_one.rank]
-            card_two_order = rank_order[card_two.rank]
+        if sorted_rank[0] == Rank.ace and sorted_rank[1] == Rank.ten:
+            return True
 
-            # special case, can ignore
-            if (
-                card_one.rank == Rank.five
-                and card_two.rank == Rank.ace
-                or card_one.rank == Rank.six
-                and card_two.rank == Rank.two
-            ):
-                continue
-
-            if card_one_order + 1 != card_two_order:
-                return False
-
-        return True
+        return False
 
     @staticmethod
     def is_bigger(cards: List[Card], current_combination: List[Card]) -> bool:

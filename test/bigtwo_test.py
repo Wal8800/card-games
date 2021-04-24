@@ -1,10 +1,8 @@
-import time
 import unittest
 
 from bigtwo.bigtwo import (
     BigTwo,
     BigTwoHand,
-    bf_find_combinations_from_cards,
     find_combinations_from_cards,
 )
 from playingcards.card import Card, Suit, Rank, Deck
@@ -919,3 +917,50 @@ class TestBigTwo(unittest.TestCase):
 
         self.assertIn(BigTwo.FULL_HOUSE, combinations)
         self.assertEqual(len(combinations[BigTwo.FULL_HOUSE]), 4)
+
+    def test_is_straight_false(self):
+        cards = [
+            Card(Suit.clubs, Rank.jack),
+            Card(Suit.spades, Rank.queen),
+            Card(Suit.hearts, Rank.king),
+            Card(Suit.spades, Rank.ace),
+            Card(Suit.hearts, Rank.two),
+        ]
+        self.assertFalse(BigTwo.is_straight(cards))
+
+        cards = [
+            Card(Suit.clubs, Rank.ten),
+            Card(Suit.spades, Rank.ten),
+            Card(Suit.hearts, Rank.ten),
+            Card(Suit.spades, Rank.queen),
+            Card(Suit.hearts, Rank.queen),
+        ]
+        self.assertFalse(BigTwo.is_straight(cards))
+
+    def test_is_straight_true(self):
+        cards = [
+            Card(Suit.clubs, Rank.jack),
+            Card(Suit.spades, Rank.queen),
+            Card(Suit.hearts, Rank.king),
+            Card(Suit.spades, Rank.ace),
+            Card(Suit.hearts, Rank.ten),
+        ]
+        self.assertTrue(BigTwo.is_straight(cards))
+
+        cards = [
+            Card(Suit.clubs, Rank.ace),
+            Card(Suit.spades, Rank.two),
+            Card(Suit.hearts, Rank.three),
+            Card(Suit.spades, Rank.four),
+            Card(Suit.hearts, Rank.five),
+        ]
+        self.assertTrue(BigTwo.is_straight(cards))
+
+        cards = [
+            Card(Suit.clubs, Rank.six),
+            Card(Suit.spades, Rank.two),
+            Card(Suit.hearts, Rank.three),
+            Card(Suit.spades, Rank.four),
+            Card(Suit.hearts, Rank.five),
+        ]
+        self.assertTrue(BigTwo.is_straight(cards))
