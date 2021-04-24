@@ -1,7 +1,13 @@
+import time
 import unittest
 
-from bigtwo.bigtwo import BigTwo, BigTwoHand
-from playingcards.card import Card, Suit, Rank
+from bigtwo.bigtwo import (
+    BigTwo,
+    BigTwoHand,
+    bf_find_combinations_from_cards,
+    find_combinations_from_cards,
+)
+from playingcards.card import Card, Suit, Rank, Deck
 
 
 class TestBigTwo(unittest.TestCase):
@@ -754,3 +760,162 @@ class TestBigTwo(unittest.TestCase):
 
         if __name__ == "__main__":
             unittest.main()
+
+    def test_find_combinations_straight(self):
+        cards = [
+            Card(Suit.spades, Rank.two),
+            Card(Suit.spades, Rank.three),
+            Card(Suit.hearts, Rank.four),
+            Card(Suit.clubs, Rank.five),
+            Card(Suit.clubs, Rank.six),
+        ]
+        combinations = find_combinations_from_cards(cards)
+
+        self.assertIn(BigTwo.STRAIGHT, combinations)
+        self.assertEqual(len(combinations[BigTwo.STRAIGHT]), 1)
+        self.assertTupleEqual(combinations[BigTwo.STRAIGHT][0], tuple(cards))
+
+        cards = [
+            Card(Suit.spades, Rank.two),
+            Card(Suit.spades, Rank.three),
+            Card(Suit.hearts, Rank.four),
+            Card(Suit.clubs, Rank.five),
+            Card(Suit.clubs, Rank.six),
+            Card(Suit.clubs, Rank.seven),
+        ]
+        combinations = find_combinations_from_cards(cards)
+
+        self.assertIn(BigTwo.STRAIGHT, combinations)
+        self.assertEqual(len(combinations[BigTwo.STRAIGHT]), 2)
+        self.assertTupleEqual(combinations[BigTwo.STRAIGHT][0], tuple(cards[:5]))
+        self.assertTupleEqual(combinations[BigTwo.STRAIGHT][1], tuple(cards[1:]))
+
+    def test_find_combinations_straight_special(self):
+        cards = [
+            Card(Suit.spades, Rank.ten),
+            Card(Suit.spades, Rank.jack),
+            Card(Suit.hearts, Rank.queen),
+            Card(Suit.clubs, Rank.king),
+            Card(Suit.clubs, Rank.ace),
+            Card(Suit.clubs, Rank.seven),
+        ]
+        combinations = find_combinations_from_cards(cards)
+
+        self.assertIn(BigTwo.STRAIGHT, combinations)
+        self.assertEqual(len(combinations[BigTwo.STRAIGHT]), 1)
+        self.assertTupleEqual(combinations[BigTwo.STRAIGHT][0], tuple(cards[:5]))
+
+    def test_find_combinations_straight_not_found(self):
+        cards = [
+            Card(Suit.spades, Rank.ten),
+            Card(Suit.spades, Rank.jack),
+            Card(Suit.hearts, Rank.six),
+            Card(Suit.clubs, Rank.king),
+            Card(Suit.clubs, Rank.ace),
+            Card(Suit.clubs, Rank.seven),
+        ]
+        combinations = find_combinations_from_cards(cards)
+
+        self.assertNotIn(BigTwo.STRAIGHT, combinations)
+        self.assertEqual(len(combinations), 0)
+
+    def test_find_combinations_flush(self):
+        cards = [
+            Card(Suit.spades, Rank.ten),
+            Card(Suit.spades, Rank.jack),
+            Card(Suit.spades, Rank.six),
+            Card(Suit.spades, Rank.king),
+            Card(Suit.spades, Rank.ace),
+            Card(Suit.clubs, Rank.seven),
+            Card(Suit.spades, Rank.two),
+        ]
+        combinations = find_combinations_from_cards(cards)
+
+        self.assertIn(BigTwo.FLUSH, combinations)
+        self.assertEqual(len(combinations[BigTwo.FLUSH]), 6)
+
+    def test_find_combinations_straight_flush(self):
+        cards = [
+            Card(Suit.clubs, Rank.seven),
+            Card(Suit.spades, Rank.ten),
+            Card(Suit.spades, Rank.jack),
+            Card(Suit.spades, Rank.queen),
+            Card(Suit.spades, Rank.king),
+            Card(Suit.spades, Rank.ace),
+        ]
+        combinations = find_combinations_from_cards(cards)
+
+        self.assertIn(BigTwo.STRAIGHT_FLUSH, combinations)
+        self.assertNotIn(BigTwo.STRAIGHT, combinations)
+        self.assertEqual(len(combinations[BigTwo.STRAIGHT_FLUSH]), 1)
+        self.assertTupleEqual(combinations[BigTwo.STRAIGHT_FLUSH][0], tuple(cards[1:]))
+
+    def test_find_combinations_full_house(self):
+        cards = [
+            Card(Suit.clubs, Rank.ten),
+            Card(Suit.spades, Rank.ten),
+            Card(Suit.hearts, Rank.ten),
+            Card(Suit.spades, Rank.queen),
+            Card(Suit.hearts, Rank.queen),
+        ]
+        combinations = find_combinations_from_cards(cards)
+
+        self.assertIn(BigTwo.FULL_HOUSE, combinations)
+        self.assertEqual(len(combinations[BigTwo.FULL_HOUSE]), 1)
+        self.assertTupleEqual(combinations[BigTwo.FULL_HOUSE][0], tuple(cards))
+
+    def test_find_combinations_multiple_full_house(self):
+        cards = [
+            Card(Suit.clubs, Rank.ten),
+            Card(Suit.spades, Rank.ten),
+            Card(Suit.hearts, Rank.ten),
+            Card(Suit.spades, Rank.queen),
+            Card(Suit.hearts, Rank.queen),
+            Card(Suit.diamond, Rank.queen),
+        ]
+        combinations = find_combinations_from_cards(cards)
+
+        self.assertIn(BigTwo.FULL_HOUSE, combinations)
+        self.assertEqual(len(combinations[BigTwo.FULL_HOUSE]), 6)
+
+    def test_find_combinations_four_of_a_kind(self):
+        cards = [
+            Card(Suit.clubs, Rank.ten),
+            Card(Suit.spades, Rank.ten),
+            Card(Suit.hearts, Rank.ten),
+            Card(Suit.diamond, Rank.ten),
+            Card(Suit.spades, Rank.queen),
+            Card(Suit.hearts, Rank.queen),
+        ]
+        combinations = find_combinations_from_cards(cards)
+
+        self.assertIn(BigTwo.FOUR_OF_A_KIND, combinations)
+        self.assertEqual(len(combinations[BigTwo.FOUR_OF_A_KIND]), 2)
+        self.assertTupleEqual(
+            combinations[BigTwo.FOUR_OF_A_KIND][0],
+            tuple(
+                [
+                    Card(Suit.clubs, Rank.ten),
+                    Card(Suit.spades, Rank.ten),
+                    Card(Suit.hearts, Rank.ten),
+                    Card(Suit.diamond, Rank.ten),
+                    Card(Suit.spades, Rank.queen),
+                ]
+            ),
+        )
+
+        self.assertTupleEqual(
+            combinations[BigTwo.FOUR_OF_A_KIND][1],
+            tuple(
+                [
+                    Card(Suit.clubs, Rank.ten),
+                    Card(Suit.spades, Rank.ten),
+                    Card(Suit.hearts, Rank.ten),
+                    Card(Suit.diamond, Rank.ten),
+                    Card(Suit.hearts, Rank.queen),
+                ]
+            ),
+        )
+
+        self.assertIn(BigTwo.FULL_HOUSE, combinations)
+        self.assertEqual(len(combinations[BigTwo.FULL_HOUSE]), 4)

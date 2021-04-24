@@ -1,13 +1,17 @@
+import cProfile
+import io
 import itertools
 import logging
 import multiprocessing as mp
 import os
+import pstats
 import sys
 import time
 from collections import Counter
 from dataclasses import dataclass, asdict
 from datetime import datetime
 from multiprocessing import Queue, Process
+from pstats import SortKey
 from typing import Dict, List, Tuple, Mapping, Any
 
 import numpy as np
@@ -21,7 +25,6 @@ from gamerunner.cmd_line_bot import CommandLineBot
 from gamerunner.ppo_bot import (
     SimplePPOBot,
     GameBuffer,
-    PlayerBuffer,
     EmbeddedInputBot,
     MultiInputGameBuffer,
     MultiInputPlayerBuffer,
@@ -251,10 +254,14 @@ def collect_data_from_env(
     player_ep_rews = create_player_rew_buf()
 
     sample_metric = SampleMetric()
-
+    total_action_time = 0
+    total_pred_val_time = 0
     for t in range(buffer_size):
         obs = env.get_current_player_obs()
+
+        st = time.time()
         action = bot.action(obs)
+        total_action_time += time.time() - st
 
         new_obs, reward, done = env.step(action.raw)
         sample_metric.track_action(action.raw, reward)
@@ -278,6 +285,7 @@ def collect_data_from_env(
                 if player_buf.is_empty():
                     continue
 
+                st = time.time()
                 estimated_values = bot.predict_value(player_buf.get_curr_path())
 
                 last_val = 0
@@ -287,7 +295,7 @@ def collect_data_from_env(
                     if not isinstance(transformed_obs, Mapping):
                         transformed_obs = np.array([transformed_obs])
                     last_val = bot.predict_value(transformed_obs)
-
+                total_pred_val_time += time.time() - st
                 player_buf.finish_path(estimated_values.numpy().flatten(), last_val)
                 buf.add(player_buf)
 
@@ -299,6 +307,7 @@ def collect_data_from_env(
             player_bufs = create_player_buf(config.player_buf_class)
             player_ep_rews = create_player_rew_buf()
 
+    print(total_action_time, total_pred_val_time)
     return buf, sample_metric
 
 
@@ -321,7 +330,7 @@ def train():
     env = BigTwo()
 
     config = ExperimentConfig()
-    config.epoch = 10
+    config.epoch = 3
     config.lr = 0.0001
     config.mini_batch_size = 1024
 
@@ -332,7 +341,15 @@ def train():
 
         policy_weight, value_weight = bot.get_weights()
 
+        pr = cProfile.Profile()
+        pr.enable()
         buf, m = collect_data_from_env(policy_weight, value_weight, config)
+        pr.disable()
+        s = io.StringIO()
+        sortby = SortKey.CUMULATIVE
+        ps = pstats.Stats(pr, stream=s).sort_stats(sortby)
+        ps.print_stats(50)
+        print(s.getvalue())
 
         sample_time_taken = time.time() - sample_start_time
 

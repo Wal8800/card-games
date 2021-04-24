@@ -1,4 +1,5 @@
 import itertools
+import time
 from typing import Dict, List, Tuple, Mapping
 
 import numpy as np
@@ -612,6 +613,7 @@ class EmbeddedInputBot(SimplePPOBot):
 
     def action(self, observation: BigTwoObservation) -> PPOAction:
         transformed_obs = self.transform_obs(observation)
+
         action_mask = generate_action_mask(
             self.action_cat_mapping, self.idx_cat_mapping, observation
         )
