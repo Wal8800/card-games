@@ -26,7 +26,7 @@ def bench_find_combinations_from_cards():
     print("custom: ", time.time() - st)
 
 
-def check__find_combinations_from_cards():
+def check_find_combinations_from_cards():
     deck = Deck()
 
     for _ in range(100):
@@ -53,4 +53,4 @@ def check__find_combinations_from_cards():
 
 
 if __name__ == "__main__":
-    check__find_combinations_from_cards()
+    check_find_combinations_from_cards()

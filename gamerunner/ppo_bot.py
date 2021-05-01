@@ -11,7 +11,7 @@ from algorithm.agent import (
 )
 from tensorflow.keras import layers
 
-from bigtwo.bigtwo import BigTwoObservation, BigTwo
+from bigtwo.bigtwo import BigTwoObservation, BigTwo, BigTwoHand
 from gamerunner.big_two_bot import BigTwoBot
 from playingcards.card import Card, Suit, Rank
 
@@ -212,22 +212,35 @@ def generate_all_option(obs: BigTwoObservation):
     return single_options + pair_options + combination_options
 
 
-def generate_single_options(obs: BigTwoObservation):
-    return [[idx] for idx in range(len(obs.your_hands))]
-
-
-def generate_pair_options(obs: BigTwoObservation):
-    card_idx_mapping = {obs.your_hands[idx]: idx for idx in range(len(obs.your_hands))}
+def generate_single_options(hands: BigTwoHand, target_to_beat: Card) -> List[List[int]]:
     return [
-        [card_idx_mapping.get(card) for card in pair] for pair in obs.your_hands.pairs
+        [idx]
+        for idx, card in enumerate(hands)
+        if BigTwo.is_bigger([card], [target_to_beat])
     ]
 
 
-def generate_combinations_options(obs: BigTwoObservation):
-    card_idx_mapping = {obs.your_hands[idx]: idx for idx in range(len(obs.your_hands))}
+def generate_pair_options(
+    hands: BigTwoHand, target_to_beat: List[Card]
+) -> List[List[int]]:
+    card_idx_mapping = {hands[idx]: idx for idx in range(len(hands))}
+    return [
+        [card_idx_mapping.get(card) for card in pair]
+        for pair in hands.pairs
+        if BigTwo.is_bigger(list(pair), target_to_beat)
+    ]
+
+
+def generate_combinations_options(
+    hands: BigTwoHand, target_to_beat: List[Card]
+) -> List[List[int]]:
+    card_idx_mapping = {hands[idx]: idx for idx in range(len(hands))}
     combination_options = []
-    for _, combinations in obs.your_hands.combinations.items():
+    for _, combinations in hands.combinations.items():
         for comb in combinations:
+            if not BigTwo.is_bigger(comb, target_to_beat):
+                continue
+
             comb_idx = [card_idx_mapping.get(card) for card in comb]
             combination_options.append(comb_idx)
     return combination_options
@@ -243,11 +256,11 @@ def generate_action_mask(
     if obs.can_play_any_cards():
         options = generate_all_option(obs)
     elif len(obs.last_cards_played) == 1:
-        options = generate_single_options(obs)
+        options = generate_single_options(obs.your_hands, obs.last_cards_played[0])
     elif len(obs.last_cards_played) == 2:
-        options = generate_pair_options(obs)
+        options = generate_pair_options(obs.your_hands, obs.last_cards_played)
     elif len(obs.last_cards_played) == 5:
-        options = generate_combinations_options(obs)
+        options = generate_combinations_options(obs.your_hands, obs.last_cards_played)
     else:
         raise ValueError("unexpected scenario to generate invalid actions mask")
 

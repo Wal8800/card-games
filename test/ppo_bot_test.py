@@ -24,6 +24,19 @@ class TestPPOBot(unittest.TestCase):
         self.assertEqual(mask[1], True)
         self.assertEqual(mask[2], False)
 
+    def test_generate_action_mask_single_smaller(self):
+        action_cat_mapping, idx_cat_mapping = create_action_cat_mapping()
+
+        cards = [Card(Suit.hearts, Rank.three)]
+        hand = BigTwoHand(cards)
+        obs = BigTwoObservation([], [Card(Suit.hearts, Rank.six)], hand, 1, 3)
+
+        mask = generate_action_mask(idx_cat_mapping, obs)
+
+        self.assertEqual(mask[0], True)
+        self.assertEqual(mask[1], False)
+        self.assertEqual(mask[2], False)
+
     def test_generate_action_mask_double(self):
         action_cat_mapping, idx_cat_mapping = create_action_cat_mapping()
 
@@ -42,10 +55,26 @@ class TestPPOBot(unittest.TestCase):
         self.assertFalse(mask[2])
 
         # can play double cards
-        self.assertEqual(mask[14], True)
+        self.assertTrue(mask[14])
 
         # other pairs is invalid
-        self.assertEqual(mask[20], False)
+        self.assertFalse(mask[20])
+
+    def test_generate_action_mask_double_smaller(self):
+        action_cat_mapping, idx_cat_mapping = create_action_cat_mapping()
+
+        cards = [Card(Suit.hearts, Rank.seven), Card(Suit.spades, Rank.seven)]
+        played = [Card(Suit.clubs, Rank.ten), Card(Suit.hearts, Rank.ten)]
+        hand = BigTwoHand(cards)
+        obs = BigTwoObservation([], played, hand, 1, 3)
+
+        mask = generate_action_mask(idx_cat_mapping, obs)
+
+        # can skip
+        self.assertTrue(mask[0])
+
+        # can play double cards
+        self.assertFalse(mask[14])
 
     def test_generate_action_mask_comb(self):
         action_cat_mapping, idx_cat_mapping = create_action_cat_mapping()
@@ -82,6 +111,44 @@ class TestPPOBot(unittest.TestCase):
         self.assertFalse(mask[5])
 
         self.assertTrue(mask[92])
+
+        self.assertFalse(mask[100])
+
+    def test_generate_action_mask_comb_smaller(self):
+        action_cat_mapping, idx_cat_mapping = create_action_cat_mapping()
+
+        cards = [
+            Card(Suit.clubs, Rank.six),
+            Card(Suit.spades, Rank.seven),
+            Card(Suit.hearts, Rank.eight),
+            Card(Suit.diamond, Rank.nine),
+            Card(Suit.diamond, Rank.ten),
+        ]
+
+        played = [
+            Card(Suit.spades, Rank.six),
+            Card(Suit.clubs, Rank.seven),
+            Card(Suit.diamond, Rank.eight),
+            Card(Suit.spades, Rank.nine),
+            Card(Suit.clubs, Rank.ten),
+        ]
+
+        hand = BigTwoHand(cards)
+        obs = BigTwoObservation([], played, hand, 1, 3)
+
+        mask = generate_action_mask(idx_cat_mapping, obs)
+
+        # skip is valid
+        self.assertTrue(mask[0])
+
+        # single card 1 to 5 is invalid
+        self.assertFalse(mask[1])
+        self.assertFalse(mask[2])
+        self.assertFalse(mask[3])
+        self.assertFalse(mask[4])
+        self.assertFalse(mask[5])
+
+        self.assertFalse(mask[92])
 
         self.assertFalse(mask[100])
 

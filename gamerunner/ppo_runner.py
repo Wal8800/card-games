@@ -28,6 +28,7 @@ from gamerunner.ppo_bot import (
     EmbeddedInputBot,
     MultiInputGameBuffer,
     MultiInputPlayerBuffer,
+    PlayerBuffer,
 )
 
 FORMATTER = logging.Formatter("%(asctime)s — %(name)s — %(levelname)s — %(message)s")
@@ -70,7 +71,7 @@ def create_player_rew_buf(num_of_player=4) -> Dict[int, List[int]]:
 
 @dataclass
 class ExperimentConfig:
-    epoch: int = 2000
+    epoch: int = 3000
     buffer_size: int = 4000
     lr: float = 0.0001
     mini_batch_size: int = 1024
@@ -79,13 +80,13 @@ class ExperimentConfig:
 
     clip_ratio: float = 0.3
 
-    # bot_class = SimplePPOBot
-    # game_buf_class = GameBuffer
-    # player_buf_class = PlayerBuffer
+    bot_class = SimplePPOBot
+    game_buf_class = GameBuffer
+    player_buf_class = PlayerBuffer
 
-    bot_class = EmbeddedInputBot
-    game_buf_class = MultiInputGameBuffer
-    player_buf_class = MultiInputPlayerBuffer
+    # bot_class = EmbeddedInputBot
+    # game_buf_class = MultiInputGameBuffer
+    # player_buf_class = MultiInputPlayerBuffer
 
 
 class SampleMetric:
