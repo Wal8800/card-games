@@ -1,5 +1,4 @@
 import itertools
-import time
 from typing import Dict, List, Tuple, Mapping
 
 import numpy as np
@@ -159,11 +158,10 @@ def create_action_cat_mapping(
 
 
 def generate_action_mask_first_turn(
-    act_cat_mapping: Dict[int, List[int]],
     idx_cat_mapping,
     obs: BigTwoObservation,
 ) -> np.array:
-    result = np.full(len(act_cat_mapping), False)
+    result = np.full(len(idx_cat_mapping) + 1, False)
 
     diamond_three = Card(Suit.diamond, Rank.three)
 
@@ -182,10 +180,7 @@ def generate_action_mask_first_turn(
         if diamond_three not in pair:
             continue
 
-        pair_idx = []
-        for card in pair:
-            pair_idx.append(card_idx_mapping.get(card))
-
+        pair_idx = [card_idx_mapping.get(card) for card in pair]
         cat = idx_cat_mapping[frozenset(pair_idx)]
         result[cat] = True
 
@@ -194,64 +189,75 @@ def generate_action_mask_first_turn(
             if diamond_three not in comb:
                 continue
 
-            comb_idx = []
-            for card in comb:
-                comb_idx.append(card_idx_mapping.get(card))
-
+            comb_idx = [card_idx_mapping.get(card) for card in comb]
             cat = idx_cat_mapping[frozenset(comb_idx)]
             result[cat] = True
 
     return result
 
 
+# if play anything update all the mapping
+def generate_all_option(obs: BigTwoObservation):
+    card_idx_mapping = {obs.your_hands[idx]: idx for idx in range(len(obs.your_hands))}
+    single_options = [[idx] for idx in range(len(obs.your_hands))]
+    pair_options = [
+        [card_idx_mapping.get(card) for card in pair] for pair in obs.your_hands.pairs
+    ]
+    combination_options = []
+    for _, combinations in obs.your_hands.combinations.items():
+        for comb in combinations:
+            comb_idx = [card_idx_mapping.get(card) for card in comb]
+            combination_options.append(comb_idx)
+
+    return single_options + pair_options + combination_options
+
+
+def generate_single_options(obs: BigTwoObservation):
+    return [[idx] for idx in range(len(obs.your_hands))]
+
+
+def generate_pair_options(obs: BigTwoObservation):
+    card_idx_mapping = {obs.your_hands[idx]: idx for idx in range(len(obs.your_hands))}
+    return [
+        [card_idx_mapping.get(card) for card in pair] for pair in obs.your_hands.pairs
+    ]
+
+
+def generate_combinations_options(obs: BigTwoObservation):
+    card_idx_mapping = {obs.your_hands[idx]: idx for idx in range(len(obs.your_hands))}
+    combination_options = []
+    for _, combinations in obs.your_hands.combinations.items():
+        for comb in combinations:
+            comb_idx = [card_idx_mapping.get(card) for card in comb]
+            combination_options.append(comb_idx)
+    return combination_options
+
+
 def generate_action_mask(
-    act_cat_mapping: Dict[int, List[int]],
     idx_cat_mapping,
     obs: BigTwoObservation,
 ) -> np.array:
-    if obs.last_player_played == BigTwo.UNKNOWN_PLAYER:
-        return generate_action_mask_first_turn(act_cat_mapping, idx_cat_mapping, obs)
+    if obs.is_first_turn():
+        return generate_action_mask_first_turn(idx_cat_mapping, obs)
 
-    result = np.full(len(act_cat_mapping), False)
+    if obs.can_play_any_cards():
+        options = generate_all_option(obs)
+    elif len(obs.last_cards_played) == 1:
+        options = generate_single_options(obs)
+    elif len(obs.last_cards_played) == 2:
+        options = generate_pair_options(obs)
+    elif len(obs.last_cards_played) == 5:
+        options = generate_combinations_options(obs)
+    else:
+        raise ValueError("unexpected scenario to generate invalid actions mask")
+
+    # idx_cat_mapping + 1 beacause we need to include no action
+    result = np.full(len(idx_cat_mapping) + 1, False)
     result[0] = obs.can_skip()
 
-    n_cards_to_play = len(obs.last_cards_played)
-
-    can_play_anything = (
-        n_cards_to_play == 0 or obs.last_player_played == obs.current_player
-    )
-
-    card_idx_mapping = {obs.your_hands[idx]: idx for idx in range(len(obs.your_hands))}
-
-    if can_play_anything or n_cards_to_play == 1:
-        for idx in range(len(obs.your_hands)):
-            cat = idx_cat_mapping[frozenset([idx])]
-            result[cat] = True
-
-    if len(obs.your_hands) < 2:
-        return result
-
-    if can_play_anything or n_cards_to_play == 2:
-        for pair in obs.your_hands.pairs:
-            pair_idx = []
-            for card in pair:
-                pair_idx.append(card_idx_mapping.get(card))
-
-            cat = idx_cat_mapping[frozenset(pair_idx)]
-            result[cat] = True
-
-    if len(obs.your_hands) < 5:
-        return result
-
-    if can_play_anything or n_cards_to_play == 5:
-        for _, combinations in obs.your_hands.combinations.items():
-            for comb in combinations:
-                comb_idx = []
-                for card in comb:
-                    comb_idx.append(card_idx_mapping.get(card))
-
-                cat = idx_cat_mapping[frozenset(comb_idx)]
-                result[cat] = True
+    for option in options:
+        cat = idx_cat_mapping[frozenset(option)]
+        result[cat] = True
 
     return result
 
@@ -499,9 +505,7 @@ class SimplePPOBot(BigTwoBot):
 
     def action(self, observation: BigTwoObservation) -> PPOAction:
         transformed_obs = self.transform_obs(observation)
-        action_mask = generate_action_mask(
-            self.action_cat_mapping, self.idx_cat_mapping, observation
-        )
+        action_mask = generate_action_mask(self.idx_cat_mapping, observation)
 
         action_tensor, logp_tensor = self.agent.action(
             obs=np.array([transformed_obs]), mask=action_mask
@@ -614,9 +618,7 @@ class EmbeddedInputBot(SimplePPOBot):
     def action(self, observation: BigTwoObservation) -> PPOAction:
         transformed_obs = self.transform_obs(observation)
 
-        action_mask = generate_action_mask(
-            self.action_cat_mapping, self.idx_cat_mapping, observation
-        )
+        action_mask = generate_action_mask(self.idx_cat_mapping, observation)
 
         action_tensor, logp_tensor = self.agent.action(
             obs=transformed_obs, mask=action_mask

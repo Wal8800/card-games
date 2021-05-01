@@ -18,7 +18,7 @@ class TestPPOBot(unittest.TestCase):
         hand = BigTwoHand(cards)
         obs = BigTwoObservation([], [Card(Suit.hearts, Rank.six)], hand, 1, 3)
 
-        mask = generate_action_mask(action_cat_mapping, idx_cat_mapping, obs)
+        mask = generate_action_mask(idx_cat_mapping, obs)
 
         self.assertEqual(mask[0], True)
         self.assertEqual(mask[1], True)
@@ -32,7 +32,7 @@ class TestPPOBot(unittest.TestCase):
         hand = BigTwoHand(cards)
         obs = BigTwoObservation([], played, hand, 1, 3)
 
-        mask = generate_action_mask(action_cat_mapping, idx_cat_mapping, obs)
+        mask = generate_action_mask(idx_cat_mapping, obs)
 
         # can skip
         self.assertTrue(mask[0])
@@ -69,7 +69,7 @@ class TestPPOBot(unittest.TestCase):
         hand = BigTwoHand(cards)
         obs = BigTwoObservation([], played, hand, 1, 3)
 
-        mask = generate_action_mask(action_cat_mapping, idx_cat_mapping, obs)
+        mask = generate_action_mask(idx_cat_mapping, obs)
 
         # skip is valid
         self.assertTrue(mask[0])
@@ -92,7 +92,7 @@ class TestPPOBot(unittest.TestCase):
         hand = BigTwoHand(cards)
         obs = BigTwoObservation([], [], hand, 1, 1)
 
-        mask = generate_action_mask(action_cat_mapping, idx_cat_mapping, obs)
+        mask = generate_action_mask(idx_cat_mapping, obs)
 
         self.assertFalse(mask[0])
 
@@ -109,7 +109,7 @@ class TestPPOBot(unittest.TestCase):
         hand = BigTwoHand(cards)
         obs = BigTwoObservation([], [], hand, 1, BigTwo.UNKNOWN_PLAYER)
 
-        mask = generate_action_mask(action_cat_mapping, idx_cat_mapping, obs)
+        mask = generate_action_mask(idx_cat_mapping, obs)
 
         self.assertFalse(mask[0])
 
