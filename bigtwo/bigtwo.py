@@ -260,6 +260,15 @@ class BigTwoObservation:
             and self.last_player_played != self.current_player
         )
 
+    def is_first_turn(self) -> bool:
+        return self.last_player_played == BigTwo.UNKNOWN_PLAYER
+
+    def can_play_any_cards(self) -> bool:
+        return (
+            len(self.last_cards_played) == 0
+            or self.last_player_played == self.current_player
+        )
+
 
 class BigTwo:
     FULL_HOUSE = 1

@@ -70,7 +70,7 @@ def create_player_rew_buf(num_of_player=4) -> Dict[int, List[int]]:
 
 @dataclass
 class ExperimentConfig:
-    epoch: int = 20
+    epoch: int = 2000
     buffer_size: int = 4000
     lr: float = 0.0001
     mini_batch_size: int = 1024
@@ -307,7 +307,6 @@ def collect_data_from_env(
             player_bufs = create_player_buf(config.player_buf_class)
             player_ep_rews = create_player_rew_buf()
 
-    print(total_action_time, total_pred_val_time)
     return buf, sample_metric
 
 
@@ -503,7 +502,7 @@ def play_with_cmd():
 if __name__ == "__main__":
     config_gpu()
     start_time = time.time()
-    train()
-    # train_parallel(ExperimentConfig())
+    # train()
+    train_parallel(ExperimentConfig())
     # play_with_cmd()
     print(f"Time taken: {time.time() - start_time:.3f} seconds")
