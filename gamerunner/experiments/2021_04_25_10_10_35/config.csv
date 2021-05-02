@@ -1,0 +1,2 @@
+epoch,buffer_size,lr,mini_batch_size,num_of_worker,clip_ratio,time_taken,bot_class_name
+3,4000,0.0001,1024,10,0.3,48.125099897384644,EmbeddedInputBot
