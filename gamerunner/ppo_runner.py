@@ -1,19 +1,16 @@
-import cProfile
-import io
 import itertools
 import logging
 import multiprocessing as mp
 import os
-import pstats
 import sys
 import time
 from collections import Counter
 from dataclasses import dataclass, asdict
 from datetime import datetime
 from multiprocessing import Queue, Process
-from pstats import SortKey
 from typing import Dict, List, Tuple, Mapping, Any
 
+import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import seaborn as sns
@@ -25,9 +22,6 @@ from gamerunner.cmd_line_bot import CommandLineBot
 from gamerunner.ppo_bot import (
     SimplePPOBot,
     GameBuffer,
-    EmbeddedInputBot,
-    MultiInputGameBuffer,
-    MultiInputPlayerBuffer,
     PlayerBuffer,
 )
 
@@ -71,7 +65,7 @@ def create_player_rew_buf(num_of_player=4) -> Dict[int, List[int]]:
 
 @dataclass
 class ExperimentConfig:
-    epoch: int = 3000
+    epoch: int = 2000
     buffer_size: int = 4000
     lr: float = 0.0001
     mini_batch_size: int = 1024
@@ -100,6 +94,8 @@ class SampleMetric:
         self.game_history = []
         self.action_history = []
         self.batch_games_played = 0
+        self.win_count = {}
+        self.loss_count = {}
 
     def track_action(self, action: List[int], rewards):
         num_of_cards = sum(action)
@@ -112,6 +108,17 @@ class SampleMetric:
 
         if done:
             self.batch_games_played += 1
+
+            self.win_count[env.player_last_played] = (
+                self.win_count.get(env.player_last_played, 0) + 1
+            )
+
+            for i in range(env.number_of_players()):
+                if i == env.player_last_played:
+                    continue
+
+                self.loss_count[i] = self.loss_count.get(i, 0) + 1
+
         self.game_history.append(env.state)
         self.action_history.append(env.past_actions)
 
@@ -156,12 +163,22 @@ class SampleMetric:
             self.num_of_valid_card_played + other.num_of_valid_card_played
         )
 
+        result.win_count = {
+            i: self.win_count.get(i, 0) + other.win_count.get(i, 0)
+            for i in range(BigTwo.number_of_players())
+        }
+
+        result.loss_count = {
+            i: self.loss_count.get(i, 0) + other.loss_count.get(i, 0)
+            for i in range(BigTwo.number_of_players())
+        }
+
         return result
 
 
 class ExperimentLogger:
     def __init__(self):
-        self.metrics = []
+        self.metrics: List[SampleMetric] = []
         self.policy_loss = []
         self.value_loss = []
         self.sample_time = []
@@ -205,18 +222,38 @@ class ExperimentLogger:
         )
         training_df.to_csv(f"{new_dir_path}/training.csv", index=False)
 
-        min_ep_ret = [np.min(m.batch_rets) for m in self.metrics]
-        avg_ep_ret = [np.mean(m.batch_rets) for m in self.metrics]
-        med_ep_ret = [np.median(m.batch_rets) for m in self.metrics]
         plot_data = {
-            "min_ret": min_ep_ret,
-            "avg_ret": avg_ep_ret,
-            "med_ret": med_ep_ret,
+            "min_ret": [np.min(m.batch_rets) for m in self.metrics],
+            "avg_ret": [np.mean(m.batch_rets) for m in self.metrics],
+            "med_ret": [np.median(m.batch_rets) for m in self.metrics],
         }
 
+        plt.figure()
         ax = sns.lineplot(data=plot_data)
         figure = ax.get_figure()
         figure.savefig(f"{new_dir_path}/returns_plot.png", dpi=400)
+
+        game_length_data = {
+            "avg_game_played": [np.mean(m.batch_games_played) for m in self.metrics],
+            "avg_ep_len": [np.mean(m.batch_lens) for m in self.metrics],
+        }
+
+        plt.figure()
+        ax = sns.lineplot(data=game_length_data)
+        figure = ax.get_figure()
+        figure.savefig(f"{new_dir_path}/game_length.png", dpi=400)
+
+        plt.figure()
+        # players 0 (first player) is always the one with latest policy
+        win_rates_data = {
+            "avg_win_rates": [
+                m.win_count[0] / (m.win_count[0] + m.loss_count[0])
+                for m in self.metrics
+            ]
+        }
+        ax = sns.lineplot(data=win_rates_data)
+        figure = ax.get_figure()
+        figure.savefig(f"{new_dir_path}/win_rates.png", dpi=400)
 
         with open(f"{new_dir_path}/game_history.txt", "w") as f:
             for hist in self.metrics[-1].game_history:
@@ -330,7 +367,7 @@ def train():
     env = BigTwo()
 
     config = ExperimentConfig()
-    config.epoch = 3
+    config.epoch = 10
     config.lr = 0.0001
     config.mini_batch_size = 1024
 
@@ -341,15 +378,7 @@ def train():
 
         policy_weight, value_weight = bot.get_weights()
 
-        pr = cProfile.Profile()
-        pr.enable()
         buf, m = collect_data_from_env(policy_weight, value_weight, config)
-        pr.disable()
-        s = io.StringIO()
-        sortby = SortKey.CUMULATIVE
-        ps = pstats.Stats(pr, stream=s).sort_stats(sortby)
-        ps.print_stats(50)
-        print(s.getvalue())
 
         sample_time_taken = time.time() - sample_start_time
 
