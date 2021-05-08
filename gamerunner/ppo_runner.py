@@ -2,6 +2,7 @@ import itertools
 import logging
 import multiprocessing as mp
 import os
+import random
 import sys
 import time
 from collections import Counter
@@ -246,7 +247,7 @@ class ExperimentLogger:
         plt.figure()
         # players 0 (first player) is always the one with latest policy
         win_rates_data = {
-            "avg_win_rates": [
+            "win_rates": [
                 m.win_count[0] / (m.win_count[0] + m.loss_count[0])
                 for m in self.metrics
             ]
@@ -277,14 +278,32 @@ def sample_worker(input_queue: Queue, output: Queue):
 
 
 def collect_data_from_env(
-    policy_weight, value_weight, config: ExperimentConfig, buffer_size=4000
+    bot_weights, opponent_weights: List[Any], config: ExperimentConfig, buffer_size=4000
 ) -> Tuple[PPOBufferInterface, SampleMetric]:
     env = BigTwo()
 
     obs = env.reset()
 
+    policy_weight, value_weight = bot_weights
+
     bot = config.bot_class(obs)
     bot.set_weights(policy_weight, value_weight)
+
+    # player 0 is the one with the latest weight and the one we are training
+    players = {0: bot}
+
+    # player 1 to 3 are opponents with previous weights if available.
+    for i in range(3):
+        opponent = config.bot_class(obs)
+
+        # used latest weights if we haven't sampled any previous opponent weights
+        if len(opponent_weights) == 0:
+            opponent.set_weights(policy_weight, value_weight)
+        else:
+            oppo_p_weights, oppo_v_weights = random.choice(opponent_weights)
+            opponent.set_weights(oppo_p_weights, oppo_v_weights)
+
+        players[i + 1] = opponent
 
     player_bufs = create_player_buf(config.player_buf_class)
     buf = config.game_buf_class()
@@ -297,8 +316,10 @@ def collect_data_from_env(
     for t in range(buffer_size):
         obs = env.get_current_player_obs()
 
+        current_player = players[obs.current_player]
+
         st = time.time()
-        action = bot.action(obs)
+        action = current_player.action(obs)
         total_action_time += time.time() - st
 
         new_obs, reward, done = env.step(action.raw)
@@ -316,23 +337,25 @@ def collect_data_from_env(
             # add to buf
             # process each player buf then add it to the big one
             for player_number, player_buf in player_bufs.items():
+                if player_buf.is_empty():
+                    continue
+
                 ep_rews = player_ep_rews[player_number]
                 ep_ret += sum(ep_rews)
                 ep_len += len(ep_rews)
 
-                if player_buf.is_empty():
-                    continue
+                player = players[player_number]
 
                 st = time.time()
-                estimated_values = bot.predict_value(player_buf.get_curr_path())
+                estimated_values = player.predict_value(player_buf.get_curr_path())
 
                 last_val = 0
                 if not done and epoch_ended:
                     last_obs = env.get_player_obs(player_number)
-                    transformed_obs = bot.transform_obs(last_obs)
+                    transformed_obs = player.transform_obs(last_obs)
                     if not isinstance(transformed_obs, Mapping):
                         transformed_obs = np.array([transformed_obs])
-                    last_val = bot.predict_value(transformed_obs)
+                    last_val = player.predict_value(transformed_obs)
                 total_pred_val_time += time.time() - st
                 player_buf.finish_path(estimated_values.numpy().flatten(), last_val)
                 buf.add(player_buf)
@@ -367,18 +390,21 @@ def train():
     env = BigTwo()
 
     config = ExperimentConfig()
-    config.epoch = 10
+    config.epoch = 2
     config.lr = 0.0001
     config.mini_batch_size = 1024
 
+    previous_bots = []
     bot = config.bot_class(env.reset(), lr=config.lr)
     experiment_log = ExperimentLogger()
-    for i_episode in range(config.epoch):
+    for episode in range(config.epoch):
         sample_start_time = time.time()
 
-        policy_weight, value_weight = bot.get_weights()
+        weights = bot.get_weights()
+        if episode % 10 == 0 and episode > 0:
+            previous_bots.append(weights)
 
-        buf, m = collect_data_from_env(policy_weight, value_weight, config)
+        buf, m = collect_data_from_env(weights, previous_bots, config)
 
         sample_time_taken = time.time() - sample_start_time
 
@@ -390,7 +416,7 @@ def train():
         update_time_taken = time.time() - update_start_time
 
         epoch_summary = (
-            f"epoch: {i_episode + 1}, policy_loss: {policy_loss:.3f}, "
+            f"epoch: {episode + 1}, policy_loss: {policy_loss:.3f}, "
             f"value_loss: {value_loss:.3f}, "
             f"time to sample: {sample_time_taken} "
             f"time to update network: {update_time_taken}"
@@ -403,7 +429,7 @@ def train():
             m, policy_loss, value_loss, sample_time_taken, update_time_taken
         )
 
-    experiment_log.flush("./experiments", config, exp_st)
+    # experiment_log.flush("./experiments", config, exp_st)
 
 
 def merge_result(
@@ -532,7 +558,7 @@ def play_with_cmd():
 if __name__ == "__main__":
     config_gpu()
     start_time = time.time()
-    # train()
-    train_parallel(ExperimentConfig())
+    train()
+    # train_parallel(ExperimentConfig())
     # play_with_cmd()
     print(f"Time taken: {time.time() - start_time:.3f} seconds")
