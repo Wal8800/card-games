@@ -6,6 +6,7 @@ from gamerunner.ppo_bot import (
     generate_action_mask,
     EmbeddedInputBot,
     SimplePPOBot,
+    RandomPPOBot,
 )
 from playingcards.card import Card, Suit, Rank
 
@@ -210,4 +211,11 @@ class TestPPOBot(unittest.TestCase):
 
         init_obs = env.reset()
         bot = SimplePPOBot(init_obs)
+        bot.action(init_obs)
+
+    def test_random_bot_action(self):
+        env = BigTwo()
+
+        init_obs = env.reset()
+        bot = RandomPPOBot()
         bot.action(init_obs)
