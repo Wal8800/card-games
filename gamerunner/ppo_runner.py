@@ -24,6 +24,7 @@ from gamerunner.ppo_bot import (
     SimplePPOBot,
     GameBuffer,
     PlayerBuffer,
+    RandomPPOBot,
 )
 
 FORMATTER = logging.Formatter("%(asctime)s — %(name)s — %(levelname)s — %(message)s")
@@ -277,6 +278,85 @@ def sample_worker(input_queue: Queue, output: Queue):
         output.put((buf, m))
 
 
+def collect_data_from_env_random_bot(
+    bot_weights, opponent_weights: List[Any], config: ExperimentConfig, buffer_size=4000
+) -> Tuple[PPOBufferInterface, SampleMetric]:
+    env = BigTwo()
+    obs = env.reset()
+
+    policy_weight, value_weight = bot_weights
+
+    bot = config.bot_class(obs)
+    bot.set_weights(policy_weight, value_weight)
+
+    buf = config.game_buf_class()
+
+    bot_ep_rews = []
+    bot_buf = config.player_buf_class()
+
+    sample_metric = SampleMetric()
+    random_bot = RandomPPOBot()
+    timestep = 0
+    while True:
+        obs = env.get_current_player_obs()
+
+        if obs.current_player == 0:
+            action = bot.action(obs)
+            timestep += 1
+        else:
+            action = random_bot.action(obs)
+
+        new_obs, reward, done = env.step(action.raw)
+        sample_metric.track_action(action.raw, reward)
+
+        if obs.current_player == 0:
+            # storing the trajectory per players because the awards is per player not sum of all players.
+            try:
+                bot_ep_rews.append(reward)
+                bot_buf.store(
+                    obs=action.transformed_obs,
+                    act=action.cat,
+                    rew=reward,
+                    logp=action.logp,
+                    mask=action.mask,
+                )
+            except TypeError as e:
+                raise e
+
+        epoch_ended = timestep == buffer_size
+        if done or epoch_ended:
+            ep_ret, ep_len = 0, 0
+
+            ep_rews = bot_ep_rews
+            ep_ret += sum(ep_rews)
+            ep_len += len(ep_rews)
+
+            estimated_values = bot.predict_value(bot_buf.get_curr_path())
+
+            last_val = 0
+            if not done and epoch_ended:
+                last_obs = env.get_player_obs(0)
+                transformed_obs = bot.transform_obs(last_obs)
+                if not isinstance(transformed_obs, Mapping):
+                    transformed_obs = np.array([transformed_obs])
+                last_val = bot.predict_value(transformed_obs)
+            bot_buf.finish_path(estimated_values.numpy().flatten(), last_val)
+            buf.add(bot_buf)
+
+            sample_metric.track_rewards(ep_ret, ep_len)
+            sample_metric.track_env(env, done)
+
+            # reset game
+            env.reset()
+            bot_buf = config.player_buf_class()
+            bot_ep_rews = []
+
+        if epoch_ended:
+            break
+
+    return buf, sample_metric
+
+
 def collect_data_from_env(
     bot_weights, opponent_weights: List[Any], config: ExperimentConfig, buffer_size=4000
 ) -> Tuple[PPOBufferInterface, SampleMetric]:
@@ -311,16 +391,12 @@ def collect_data_from_env(
     player_ep_rews = create_player_rew_buf()
 
     sample_metric = SampleMetric()
-    total_action_time = 0
-    total_pred_val_time = 0
     for t in range(buffer_size):
         obs = env.get_current_player_obs()
 
         current_player = players[obs.current_player]
 
-        st = time.time()
         action = current_player.action(obs)
-        total_action_time += time.time() - st
 
         new_obs, reward, done = env.step(action.raw)
         sample_metric.track_action(action.raw, reward)
@@ -346,7 +422,6 @@ def collect_data_from_env(
 
                 player = players[player_number]
 
-                st = time.time()
                 estimated_values = player.predict_value(player_buf.get_curr_path())
 
                 last_val = 0
@@ -356,7 +431,6 @@ def collect_data_from_env(
                     if not isinstance(transformed_obs, Mapping):
                         transformed_obs = np.array([transformed_obs])
                     last_val = player.predict_value(transformed_obs)
-                total_pred_val_time += time.time() - st
                 player_buf.finish_path(estimated_values.numpy().flatten(), last_val)
                 buf.add(player_buf)
 
@@ -390,7 +464,7 @@ def train():
     env = BigTwo()
 
     config = ExperimentConfig()
-    config.epoch = 2
+    config.epoch = 100
     config.lr = 0.0001
     config.mini_batch_size = 1024
 
@@ -404,7 +478,7 @@ def train():
         if episode % 10 == 0 and episode > 0:
             previous_bots.append(weights)
 
-        buf, m = collect_data_from_env(weights, previous_bots, config)
+        buf, m = collect_data_from_env_random_bot(weights, previous_bots, config)
 
         sample_time_taken = time.time() - sample_start_time
 
@@ -429,7 +503,7 @@ def train():
             m, policy_loss, value_loss, sample_time_taken, update_time_taken
         )
 
-    # experiment_log.flush("./experiments", config, exp_st)
+    experiment_log.flush("./experiments", config, exp_st)
 
 
 def merge_result(

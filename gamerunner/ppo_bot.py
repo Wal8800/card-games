@@ -1,4 +1,5 @@
 import itertools
+import random
 from typing import Dict, List, Tuple, Mapping
 
 import numpy as np
@@ -502,6 +503,29 @@ class PPOAction:
         self.mask = action_mask
         self.logp = logp
         self.cards = cards
+
+
+class RandomPPOBot(BigTwoBot):
+    def __init__(self):
+        self.action_cat_mapping, self.idx_cat_mapping = create_action_cat_mapping()
+
+    def action(self, observation: BigTwoObservation) -> PPOAction:
+        action_mask = generate_action_mask(self.idx_cat_mapping, observation)
+
+        # nonzero return a tuple of 1
+        valid_moves = action_mask.nonzero()[0]
+        action_cat = np.random.choice(valid_moves)
+        raw = self.action_cat_mapping[action_cat]
+        cards = [c for idx, c in enumerate(observation.your_hands) if raw[idx] == 1]
+
+        return PPOAction(
+            transformed_obs=None,
+            raw_action=raw,
+            action_cat=action_cat,
+            action_mask=action_mask,
+            logp=None,
+            cards=cards,
+        )
 
 
 class SimplePPOBot(BigTwoBot):
