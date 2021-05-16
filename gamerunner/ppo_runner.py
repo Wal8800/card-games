@@ -311,20 +311,97 @@ def collect_data_from_env_random_bot(
 
         if obs.current_player == 0:
             # storing the trajectory per players because the awards is per player not sum of all players.
-            try:
-                bot_ep_rews.append(reward)
-                bot_buf.store(
-                    obs=action.transformed_obs,
-                    act=action.cat,
-                    rew=reward,
-                    logp=action.logp,
-                    mask=action.mask,
-                )
-            except TypeError as e:
-                raise e
+            bot_ep_rews.append(reward)
+            bot_buf.store(
+                obs=action.transformed_obs,
+                act=action.cat,
+                rew=reward,
+                logp=action.logp,
+                mask=action.mask,
+            )
 
         epoch_ended = timestep == buffer_size
         if done or epoch_ended:
+            ep_ret, ep_len = 0, 0
+
+            ep_rews = bot_ep_rews
+            ep_ret += sum(ep_rews)
+            ep_len += len(ep_rews)
+
+            estimated_values = bot.predict_value(bot_buf.get_curr_path())
+
+            last_val = 0
+            if not done and epoch_ended:
+                last_obs = env.get_player_obs(0)
+                transformed_obs = bot.transform_obs(last_obs)
+                if not isinstance(transformed_obs, Mapping):
+                    transformed_obs = np.array([transformed_obs])
+                last_val = bot.predict_value(transformed_obs)
+            bot_buf.finish_path(estimated_values.numpy().flatten(), last_val)
+            buf.add(bot_buf)
+
+            sample_metric.track_rewards(ep_ret, ep_len)
+            sample_metric.track_env(env, done)
+
+            # reset game
+            env.reset()
+            bot_buf = config.player_buf_class()
+            bot_ep_rews = []
+
+        if epoch_ended:
+            break
+
+    return buf, sample_metric
+
+
+def collect_data_from_env_self_play(
+    bot_weights, opponent_weights: List[Any], config: ExperimentConfig, buffer_size=4000
+) -> Tuple[PPOBufferInterface, SampleMetric]:
+    env = BigTwo()
+
+    obs = env.reset()
+
+    # player 0 is the one with the latest weight and the one we are training
+    policy_weight, value_weight = bot_weights
+    bot = config.bot_class(obs)
+    bot_ep_rews = []
+    bot_buf = config.player_buf_class()
+    buf = config.game_buf_class()
+
+    sample_metric = SampleMetric()
+    timestep = 0
+    while True:
+        obs = env.get_current_player_obs()
+
+        if obs.current_player == 0:
+            bot.set_weights(policy_weight, value_weight)
+            timestep += 1
+        else:
+            if len(opponent_weights) == 0:
+                opp_policy_w, opp_value_w = random.choice(opponent_weights)
+                bot.set_weights(opp_policy_w, opp_value_w)
+            else:
+                bot.set_weights(policy_weight, value_weight)
+
+        action = bot.action(obs)
+
+        new_obs, reward, done = env.step(action.raw)
+        sample_metric.track_action(action.raw, reward)
+
+        if obs.current_player == 0:
+            # storing the trajectory per players because the awards is per player not sum of all players.
+            bot_ep_rews.append(reward)
+            bot_buf.store(
+                obs=action.transformed_obs,
+                act=action.cat,
+                rew=reward,
+                logp=action.logp,
+                mask=action.mask,
+            )
+
+        epoch_ended = timestep == buffer_size
+        if done or epoch_ended:
+            bot.set_weights(policy_weight, value_weight)
             ep_ret, ep_len = 0, 0
 
             ep_rews = bot_ep_rews
@@ -464,7 +541,7 @@ def train():
     env = BigTwo()
 
     config = ExperimentConfig()
-    config.epoch = 100
+    config.epoch = 10
     config.lr = 0.0001
     config.mini_batch_size = 1024
 
@@ -475,10 +552,13 @@ def train():
         sample_start_time = time.time()
 
         weights = bot.get_weights()
-        if episode % 10 == 0 and episode > 0:
+        if episode % 2 == 0 and episode > 0:
             previous_bots.append(weights)
 
-        buf, m = collect_data_from_env_random_bot(weights, previous_bots, config)
+        if len(previous_bots) > 20:
+            previous_bots.pop(0)
+
+        buf, m = collect_data_from_env_self_play(weights, previous_bots, config)
 
         sample_time_taken = time.time() - sample_start_time
 

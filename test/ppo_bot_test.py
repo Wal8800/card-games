@@ -1,5 +1,10 @@
 import unittest
 
+import numpy as np
+import tensorflow as tf
+import tensorflow.keras as keras
+from tensorflow.keras import layers
+
 from bigtwo.bigtwo import BigTwoHand, BigTwoObservation, BigTwo
 from gamerunner.ppo_bot import (
     create_action_cat_mapping,
@@ -219,3 +224,25 @@ class TestPPOBot(unittest.TestCase):
         init_obs = env.reset()
         bot = RandomPPOBot()
         bot.action(init_obs)
+
+    def test_set_weight_and_tf_function(self):
+        inp = layers.Input(shape=(1,))
+        x = layers.Dense(4, activation="relu")(inp)
+        output = layers.Dense(1)(x)
+
+        test_model = keras.Model(inputs=inp, outputs=output)
+
+        weights = test_model.get_weights()
+
+        @tf.function
+        def test_action(model, v):
+            return model(v)
+
+        first_result = test_action(test_model, np.array([1])).numpy().flatten()
+
+        weights[0] = np.array([[100.0, 200.0, 300.0, 400.0]], dtype=np.float32)
+        test_model.set_weights(weights)
+
+        second_result = test_action(test_model, np.array([1])).numpy().flatten()
+
+        self.assertNotEqual(first_result, second_result)
