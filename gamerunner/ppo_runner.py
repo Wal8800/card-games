@@ -68,9 +68,9 @@ def create_player_rew_buf(num_of_player=4) -> Dict[int, List[int]]:
 @dataclass
 class ExperimentConfig:
     epoch: int = 2000
-    buffer_size: int = 4000
+    buffer_size: int = 1000
     lr: float = 0.0001
-    mini_batch_size: int = 1024
+    mini_batch_size: int = 256
 
     num_of_worker: int = 10
 
@@ -271,10 +271,12 @@ class ExperimentLogger:
 def sample_worker(input_queue: Queue, output: Queue):
     config_gpu()
 
-    for policy_weight, value_weight, config, buffer_size in iter(
+    for bot_weight, opponent_weights, config, buffer_size in iter(
         input_queue.get, "STOP"
     ):
-        buf, m = collect_data_from_env(policy_weight, value_weight, config, buffer_size)
+        buf, m = collect_data_from_env_self_play(
+            bot_weight, opponent_weights, config, buffer_size
+        )
         output.put((buf, m))
 
 
@@ -368,6 +370,11 @@ def collect_data_from_env_self_play(
     bot_buf = config.player_buf_class()
     buf = config.game_buf_class()
 
+    if len(opponent_weights) > 0:
+        opponents = {i + 1: random.choice(opponent_weights) for i in range(3)}
+    else:
+        opponents = {i + 1: bot_weights for i in range(3)}
+
     sample_metric = SampleMetric()
     timestep = 0
     while True:
@@ -377,11 +384,8 @@ def collect_data_from_env_self_play(
             bot.set_weights(policy_weight, value_weight)
             timestep += 1
         else:
-            if len(opponent_weights) == 0:
-                opp_policy_w, opp_value_w = random.choice(opponent_weights)
-                bot.set_weights(opp_policy_w, opp_value_w)
-            else:
-                bot.set_weights(policy_weight, value_weight)
+            opp_policy_w, opp_value_w = opponents[obs.current_player]
+            bot.set_weights(opp_policy_w, opp_value_w)
 
         action = bot.action(obs)
 
@@ -522,12 +526,14 @@ def collect_data_from_env(
     return buf, sample_metric
 
 
-def create_worker_task(num_cpu, policy_weight, value_weight, config: ExperimentConfig):
+def create_worker_task(
+    num_cpu: int, bot_weight, opponent_weights: List[Any], config: ExperimentConfig
+):
     chunk_buffer_size = config.buffer_size // num_cpu
 
     args = zip(
-        itertools.repeat(policy_weight, num_cpu),
-        itertools.repeat(value_weight, num_cpu),
+        itertools.repeat(bot_weight, num_cpu),
+        itertools.repeat(opponent_weights, num_cpu),
         itertools.repeat(config, num_cpu),
         itertools.repeat(chunk_buffer_size, num_cpu),
     )
@@ -543,7 +549,8 @@ def train():
     config = ExperimentConfig()
     config.epoch = 10
     config.lr = 0.0001
-    config.mini_batch_size = 1024
+    config.buffer_size = 1000
+    config.mini_batch_size = 256
 
     previous_bots = []
     bot = config.bot_class(env.reset(), lr=config.lr)
@@ -552,15 +559,18 @@ def train():
         sample_start_time = time.time()
 
         weights = bot.get_weights()
+
+        buf, m = collect_data_from_env_self_play(
+            weights, previous_bots, config, config.buffer_size
+        )
+
+        sample_time_taken = time.time() - sample_start_time
+
         if episode % 2 == 0 and episode > 0:
             previous_bots.append(weights)
 
         if len(previous_bots) > 20:
             previous_bots.pop(0)
-
-        buf, m = collect_data_from_env_self_play(weights, previous_bots, config)
-
-        sample_time_taken = time.time() - sample_start_time
 
         update_start_time = time.time()
         policy_loss, value_loss = bot.update(
@@ -616,19 +626,21 @@ def train_parallel(config: ExperimentConfig):
     for i in range(NUMBER_OF_PROCESSES):
         Process(target=sample_worker, args=(task_queue, done_queue)).start()
 
+    previous_bots = []
+
     try:
         train_logger = get_logger("train_ppo", log_level=logging.INFO)
         env = BigTwo()
         bot = config.bot_class(env.reset(), lr=config.lr)
         experiment_log = ExperimentLogger()
 
-        for i_episode in range(config.epoch):
+        for episode in range(config.epoch):
             sample_start_time = time.time()
 
-            policy_weight, value_weight = bot.get_weights()
+            weights = bot.get_weights()
 
             tasks = create_worker_task(
-                NUMBER_OF_PROCESSES, policy_weight, value_weight, config
+                NUMBER_OF_PROCESSES, weights, previous_bots, config
             )
             for task in tasks:
                 task_queue.put(task)
@@ -640,6 +652,12 @@ def train_parallel(config: ExperimentConfig):
             buf, m = merge_result(result)
             sample_time_taken = time.time() - sample_start_time
 
+            if episode % 10 == 0 and episode > 0:
+                previous_bots.append(weights)
+
+            if len(previous_bots) > 20:
+                previous_bots.pop(0)
+
             update_start_time = time.time()
             policy_loss, value_loss = bot.update(
                 buf, mini_batch_size=config.mini_batch_size
@@ -647,7 +665,7 @@ def train_parallel(config: ExperimentConfig):
             update_time_taken = time.time() - update_start_time
 
             epoch_summary = (
-                f"epoch: {i_episode + 1}, policy_loss: {policy_loss:.3f}, "
+                f"epoch: {episode + 1}, policy_loss: {policy_loss:.3f}, "
                 f"value_loss: {value_loss:.3f}, "
                 f"time to sample: {sample_time_taken:.3f} "
                 f"time to update network: {update_time_taken:.3f}"
@@ -712,7 +730,7 @@ def play_with_cmd():
 if __name__ == "__main__":
     config_gpu()
     start_time = time.time()
-    train()
-    # train_parallel(ExperimentConfig())
+    # train()
+    train_parallel(ExperimentConfig())
     # play_with_cmd()
     print(f"Time taken: {time.time() - start_time:.3f} seconds")
