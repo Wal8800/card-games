@@ -13,3 +13,6 @@ setup:
 
 update_package:
 	pip install git+ssh://git@github.com/Wal8800/gym-playground.git@2.1.0
+
+tensorboard:
+    tensorboard --logdir gamerunner/tensorboard

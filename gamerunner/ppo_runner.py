@@ -1,7 +1,10 @@
+import cProfile
+import io
 import itertools
 import logging
 import multiprocessing as mp
 import os
+import pstats
 import random
 import sys
 import time
@@ -9,6 +12,7 @@ from collections import Counter
 from dataclasses import dataclass, asdict
 from datetime import datetime
 from multiprocessing import Queue, Process
+from pstats import SortKey
 from typing import Dict, List, Tuple, Mapping, Any
 
 import matplotlib.pyplot as plt
@@ -67,10 +71,10 @@ def create_player_rew_buf(num_of_player=4) -> Dict[int, List[int]]:
 
 @dataclass
 class ExperimentConfig:
-    epoch: int = 2000
-    buffer_size: int = 1000
+    epoch: int = 10
+    buffer_size: int = 4000
     lr: float = 0.0001
-    mini_batch_size: int = 256
+    mini_batch_size: int = 1028
 
     num_of_worker: int = 10
 
@@ -95,7 +99,7 @@ class SampleMetric:
         self.num_of_valid_card_played = []
         self.game_history = []
         self.action_history = []
-        self.batch_games_played = 0
+        self.batch_games_played: int = 0
         self.win_count = {}
         self.loss_count = {}
 
@@ -177,14 +181,24 @@ class SampleMetric:
 
         return result
 
+    def win_rate(self, player_number: int):
+        return self.win_count.get(player_number, 0) / (
+            self.win_count.get(player_number, 0) + self.loss_count.get(player_number, 0)
+        )
+
+
+def get_current_dt_format() -> str:
+    return datetime.now().strftime("%Y_%m_%d_%H_%M_%S")
+
 
 class ExperimentLogger:
-    def __init__(self):
+    def __init__(self, new_dir=get_current_dt_format()):
         self.metrics: List[SampleMetric] = []
         self.policy_loss = []
         self.value_loss = []
         self.sample_time = []
         self.update_time = []
+        self.new_dir = new_dir
 
     def store(
         self,
@@ -201,9 +215,7 @@ class ExperimentLogger:
         self.update_time.append(update_time_taken)
 
     def flush(self, root_dir: str, config: ExperimentConfig, exp_st: float):
-        new_dir = datetime.now().strftime("%Y_%m_%d_%H_%M_%S")
-
-        new_dir_path = f"./{root_dir}/{new_dir}"
+        new_dir_path = f"./{root_dir}/{self.new_dir}"
         os.makedirs(new_dir_path)
 
         data = asdict(config)
@@ -247,12 +259,7 @@ class ExperimentLogger:
 
         plt.figure()
         # players 0 (first player) is always the one with latest policy
-        win_rates_data = {
-            "win_rates": [
-                m.win_count[0] / (m.win_count[0] + m.loss_count[0])
-                for m in self.metrics
-            ]
-        }
+        win_rates_data = {"win_rates": [m.win_rate(0) for m in self.metrics]}
         ax = sns.lineplot(data=win_rates_data)
         figure = ax.get_figure()
         figure.savefig(f"{new_dir_path}/win_rates.png", dpi=400)
@@ -356,6 +363,26 @@ def collect_data_from_env_random_bot(
     return buf, sample_metric
 
 
+def profile(func):
+    def wrapper(*args, **kwargs):
+        pr = cProfile.Profile()
+        pr.enable()
+
+        result = func(*args, **kwargs)
+
+        pr.disable()
+        s = io.StringIO()
+        sortby = SortKey.CUMULATIVE
+        ps = pstats.Stats(pr, stream=s).sort_stats(sortby)
+        ps.print_stats(20)
+        print(s.getvalue())
+
+        return result
+
+    return wrapper
+
+
+@profile
 def collect_data_from_env_self_play(
     bot_weights, opponent_weights: List[Any], config: ExperimentConfig, buffer_size=4000
 ) -> Tuple[PPOBufferInterface, SampleMetric]:
@@ -547,14 +574,17 @@ def train():
     env = BigTwo()
 
     config = ExperimentConfig()
-    config.epoch = 10
+    config.epoch = 3
     config.lr = 0.0001
     config.buffer_size = 1000
     config.mini_batch_size = 256
 
+    new_dir = get_current_dt_format()
+    # train_summary_writer = tf.summary.create_file_writer(f"tensorboard/{new_dir}")
+
     previous_bots = []
     bot = config.bot_class(env.reset(), lr=config.lr)
-    experiment_log = ExperimentLogger()
+    experiment_log = ExperimentLogger(new_dir=new_dir)
     for episode in range(config.epoch):
         sample_start_time = time.time()
 
@@ -593,7 +623,12 @@ def train():
             m, policy_loss, value_loss, sample_time_taken, update_time_taken
         )
 
-    experiment_log.flush("./experiments", config, exp_st)
+        # with train_summary_writer.as_default():
+        #     tf.summary.scalar("win_rate", m.win_rate(0), step=episode)
+        #     tf.summary.scalar("num_of_games", m.batch_games_played, step=episode)
+        #     tf.summary.scalar("avg_rets", np.mean(m.batch_rets), step=episode)
+
+    # experiment_log.flush("./experiments", config, exp_st)
 
 
 def merge_result(
@@ -730,7 +765,7 @@ def play_with_cmd():
 if __name__ == "__main__":
     config_gpu()
     start_time = time.time()
-    # train()
-    train_parallel(ExperimentConfig())
+    train()
+    # train_parallel(ExperimentConfig())
     # play_with_cmd()
     print(f"Time taken: {time.time() - start_time:.3f} seconds")
