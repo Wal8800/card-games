@@ -393,6 +393,7 @@ def collect_data_from_env_self_play(
     # player 0 is the one with the latest weight and the one we are training
     policy_weight, value_weight = bot_weights
     bot = config.bot_class(obs)
+    bot.set_weights(policy_weight, value_weight)
     bot_ep_rews = []
     bot_buf = config.player_buf_class()
     buf = config.game_buf_class()
