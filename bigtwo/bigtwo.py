@@ -23,6 +23,24 @@ straight_rank_order = {
     Rank.king: 13,
 }
 
+rank_order = {
+    Rank.three: 1,
+    Rank.four: 2,
+    Rank.five: 3,
+    Rank.six: 4,
+    Rank.seven: 5,
+    Rank.eight: 6,
+    Rank.nine: 7,
+    Rank.ten: 8,
+    Rank.jack: 9,
+    Rank.queen: 10,
+    Rank.king: 11,
+    Rank.ace: 12,
+    Rank.two: 13,
+}
+
+suit_order = {Suit.diamond: 1, Suit.clubs: 2, Suit.hearts: 3, Suit.spades: 4}
+
 
 def have_diamond_three(hand):
     for card in hand:
@@ -314,28 +332,6 @@ class BigTwo:
         self.action_space = spaces.MultiBinary(13)
 
     @staticmethod
-    def rank_order() -> Dict[Rank, int]:
-        return {
-            Rank.three: 1,
-            Rank.four: 2,
-            Rank.five: 3,
-            Rank.six: 4,
-            Rank.seven: 5,
-            Rank.eight: 6,
-            Rank.nine: 7,
-            Rank.ten: 8,
-            Rank.jack: 9,
-            Rank.queen: 10,
-            Rank.king: 11,
-            Rank.ace: 12,
-            Rank.two: 13,
-        }
-
-    @staticmethod
-    def suit_order() -> Dict[Suit, int]:
-        return {Suit.diamond: 1, Suit.clubs: 2, Suit.hearts: 3, Suit.spades: 4}
-
-    @staticmethod
     def combination_order():
         return {
             BigTwo.STRAIGHT: 1,
@@ -426,9 +422,6 @@ class BigTwo:
 
         if len(cards) not in [1, 2, 5]:
             raise ValueError("Number of cards is incorrect")
-
-        rank_order = BigTwo.rank_order()
-        suit_order = BigTwo.suit_order()
 
         if len(cards) == 1 or len(cards) == 2:
             rank_one = rank_order[cards[0].rank]
@@ -642,11 +635,9 @@ class BigTwo:
         return self._current_observation(self._get_current_player())
 
     def is_rank_gt(self, rank_one: Rank, rank_two: Rank) -> bool:
-        rank_order = BigTwo.rank_order()
         return rank_order[rank_one] > rank_order[rank_two]
 
     def is_suit_gt(self, suit_one: Suit, suit_two: Suit) -> bool:
-        suit_order = BigTwo.suit_order()
         return suit_order[suit_one] > suit_order[suit_two]
 
     def have_playable_cards(self, target: List[Card], player_hand: BigTwoHand) -> bool:

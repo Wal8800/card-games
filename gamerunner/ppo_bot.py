@@ -16,6 +16,32 @@ from bigtwo.bigtwo import BigTwoObservation, BigTwo, BigTwoHand
 from gamerunner.big_two_bot import BigTwoBot
 from playingcards.card import Card, Suit, Rank
 
+suit_ohe = {
+    Suit.spades: [0, 0, 0, 1],
+    Suit.hearts: [0, 0, 1, 0],
+    Suit.clubs: [0, 1, 0, 0],
+    Suit.diamond: [1, 0, 0, 0],
+}
+
+rank_ohe = {
+    Rank.ace: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1],
+    Rank.two: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0],
+    Rank.three: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0],
+    Rank.four: [0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0],
+    Rank.five: [0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0],
+    Rank.six: [0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0],
+    Rank.seven: [0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0],
+    Rank.eight: [0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0],
+    Rank.nine: [0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0],
+    Rank.ten: [0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+    Rank.jack: [0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+    Rank.queen: [0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+    Rank.king: [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+}
+
+empty_suit = [0, 0, 0, 0]
+empty_rank = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+
 
 def obs_to_arr(obs: BigTwoObservation) -> np.ndarray:
     data = []
@@ -42,32 +68,6 @@ def obs_to_arr(obs: BigTwoObservation) -> np.ndarray:
 
 
 def obs_to_ohe(obs: BigTwoObservation) -> np.ndarray:
-    suit_ohe = {
-        Suit.spades: [0, 0, 0, 1],
-        Suit.hearts: [0, 0, 1, 0],
-        Suit.clubs: [0, 1, 0, 0],
-        Suit.diamond: [1, 0, 0, 0],
-    }
-
-    rank_ohe = {
-        Rank.ace: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1],
-        Rank.two: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0],
-        Rank.three: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0],
-        Rank.four: [0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0],
-        Rank.five: [0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0],
-        Rank.six: [0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0],
-        Rank.seven: [0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0],
-        Rank.eight: [0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0],
-        Rank.nine: [0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0],
-        Rank.ten: [0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-        Rank.jack: [0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-        Rank.queen: [0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-        Rank.king: [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-    }
-
-    empty_suit = [0, 0, 0, 0]
-    empty_rank = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
-
     data = []
     data += obs.num_card_per_player
 
