@@ -214,6 +214,11 @@ def generate_all_option(obs: BigTwoObservation):
 
 
 def generate_single_options(hands: BigTwoHand, target_to_beat: Card) -> List[List[int]]:
+    """
+    :param hands:
+    :param target_to_beat:
+    :return: a list of indexes, each list of indexes represent the cards to play
+    """
     return [
         [idx]
         for idx, card in enumerate(hands)
@@ -224,6 +229,14 @@ def generate_single_options(hands: BigTwoHand, target_to_beat: Card) -> List[Lis
 def generate_pair_options(
     hands: BigTwoHand, target_to_beat: List[Card]
 ) -> List[List[int]]:
+    """
+    :param hands:
+    :param target_to_beat:
+    :return: a list of indexes, each list of indexes represent the cards to play
+    """
+    if len(target_to_beat) != 2:
+        raise ValueError("expects target_to_beat to have 2 cards")
+
     card_idx_mapping = {hands[idx]: idx for idx in range(len(hands))}
     return [
         [card_idx_mapping.get(card) for card in pair]
@@ -235,6 +248,14 @@ def generate_pair_options(
 def generate_combinations_options(
     hands: BigTwoHand, target_to_beat: List[Card]
 ) -> List[List[int]]:
+    """
+    :param hands:
+    :param target_to_beat:
+    :return: a list of indexes, each list of indexes represent the cards to play
+    """
+    if len(target_to_beat) != 5:
+        raise ValueError("expects target_to_beat to have 5 cards")
+
     card_idx_mapping = {hands[idx]: idx for idx in range(len(hands))}
     combination_options = []
     for _, combinations in hands.combinations.items():
