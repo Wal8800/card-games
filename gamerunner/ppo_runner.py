@@ -1,4 +1,5 @@
 import cProfile
+import gc
 import io
 import itertools
 import linecache
@@ -24,7 +25,6 @@ from algorithm.agent import PPOBufferInterface
 from pympler import summary, muppy
 
 from bigtwo.bigtwo import BigTwo
-from gamerunner.cmd_line_bot import CommandLineBot
 from gamerunner.ppo_bot import (
     SimplePPOBot,
     GameBuffer,
@@ -41,20 +41,7 @@ def config_gpu():
         try:
             # Currently, memory growth needs to be the same across GPUs
             for gpu in gpus:
-                # tf.config.experimental.set_memory_growth(gpu, True)
-
-                result = tf.config.experimental.set_virtual_device_configuration(
-                    gpu,
-                    [
-                        tf.config.experimental.VirtualDeviceConfiguration(
-                            memory_limit=512
-                        )
-                    ],
-                )
-                print(result)
-
-            # logical_gpus = tf.config.experimental.list_logical_devices("GPU")
-            # print(len(gpus), "Physical GPUs,", len(logical_gpus), "Logical GPUs")
+                tf.config.experimental.set_memory_growth(gpu, True)
         except RuntimeError as e:
             # Memory growth must be set before GPUs have been initialized
             print(e)
@@ -83,7 +70,7 @@ def create_player_rew_buf(num_of_player=4) -> Dict[int, List[int]]:
 
 @dataclass
 class ExperimentConfig:
-    epoch: int = 2000
+    epoch: int = 5000
     lr: float = 0.0001
     buffer_size: int = 4000
     mini_batch_size: int = 512
@@ -106,7 +93,6 @@ class ExperimentConfig:
 
 class SampleMetric:
     def __init__(self):
-        self.events_counter = Counter({})
         self.batch_lens = []
         self.batch_rets = []
         self.batch_hands_played = []
@@ -143,8 +129,6 @@ class SampleMetric:
         self.game_history.append(env.state)
         self.action_history.append(env.past_actions)
 
-        self.events_counter += Counter(env.event_count)
-
     def track_rewards(self, ep_ret, ep_len):
         self.batch_rets.append(ep_ret)
         self.batch_lens.append(ep_len)
@@ -152,8 +136,8 @@ class SampleMetric:
     def summary(self) -> str:
         return (
             f"return: {np.mean(self.batch_rets):.3f}, "
-            f"med returns: {np.median(self.batch_rets)}, "
             f"ep_len: {np.mean(self.batch_lens):.3f} "
+            f"win rate: {self.win_rate(0):.3f} "
             f"ep_hands_played: {np.mean(self.batch_hands_played):.3f} "
             f"ep_games_played: {self.batch_games_played}, "
         )
@@ -164,7 +148,6 @@ class SampleMetric:
     def __add__(self, other):
         result = SampleMetric()
 
-        result.events_counter = self.events_counter + other.events_counter
         result.batch_lens = self.batch_lens + other.batch_lens
         result.batch_rets = self.batch_lens + other.batch_rets
         result.batch_hands_played = self.batch_hands_played + other.batch_hands_played
@@ -225,6 +208,7 @@ def sample_worker(input_queue: Queue, output: Queue):
         buf, m = collect_data_from_env_self_play(
             bot_weight, opponent_weights, config, buffer_size
         )
+        gc.collect()
         output.put((buf, m))
 
 
@@ -323,23 +307,70 @@ def profile_time(func):
     return wrapper
 
 
-def collect_data_from_env_self_play(
-    bot_weights, opponent_weights: List[Any], config: ExperimentConfig, buffer_size=4000
-) -> Tuple[PPOBufferInterface, SampleMetric]:
-    env = BigTwo()
+class SinglePlayerWrapper:
+    def __init__(
+        self, env: BigTwo, single_player_number: int, opponent_bots: List[Any]
+    ):
+        assert 0 <= single_player_number <= 3
+        assert len(opponent_bots) == 3
+        self.env = env
+        self.player_number = single_player_number
 
-    obs = env.reset()
+        opponent_map = {}
+        opponent_idx = 0
+        for player_number in range(4):
+            if player_number == single_player_number:
+                continue
 
-    # player 0 is the one with the latest weight and the one we are training
+            opponent_map[player_number] = opponent_bots[opponent_idx]
+            opponent_idx += 1
+
+        self.opponent_bots = opponent_map
+
+    def step(self, action):
+        obs, _, done = self.env.step(action.raw)
+        if done:
+            return obs, 1000, True
+
+        # keep taking turns until it's targeted player turn again
+        while True:
+            current_obs = self.env.get_current_player_obs()
+            if current_obs.current_player == self.player_number:
+                return current_obs, 0, False
+
+            opponent = self.opponent_bots[current_obs.current_player]
+            action = opponent.action(current_obs)
+
+            _, _, done = self.env.step(action.raw)
+            if done:
+                return self.env.get_player_obs(self.player_number), -1000, True
+
+    def reset_and_start(self):
+        obs = self.env.reset()
+
+        while True:
+            if obs.current_player == self.player_number:
+                return obs
+
+            # if it's not the targeted player, we will keep playing until it is.
+            opponent = self.opponent_bots[obs.current_player]
+            action = opponent.action(obs)
+
+            _, _, done = self.env.step(action.raw)
+
+            # it should be never done since it is impossible to finish the game in the first round.
+            assert not done
+
+            # set the obs to the current player after previous player has played.
+            obs = self.env.get_current_player_obs()
+
+
+def build_opponent_bots(
+    obs, bot_weights, opponent_weights: List[Any], config: ExperimentConfig
+) -> List[Any]:
     policy_weight, value_weight = bot_weights
-    bot = config.bot_class(obs)
-    bot.set_weights(policy_weight, value_weight)
-    bot_ep_rews = []
-    bot_buf = config.player_buf_class()
-    buf = config.game_buf_class()
-
-    opponent_bots = {}
-    for i in range(1, 4):
+    opponent_bots = []
+    for _ in range(3):
         if len(opponent_weights) > 0:
             opponent = config.bot_class(obs)
             pw, vw = random.choice(opponent_weights)
@@ -348,33 +379,52 @@ def collect_data_from_env_self_play(
             opponent = config.bot_class(obs)
             opponent.set_weights(policy_weight, value_weight)
 
-        opponent_bots[i] = opponent
+        opponent_bots.append(opponent)
+
+    return opponent_bots
+
+
+def collect_data_from_env_self_play(
+    bot_weights, opponent_weights: List[Any], config: ExperimentConfig, buffer_size=4000
+) -> Tuple[PPOBufferInterface, SampleMetric]:
+    buf = config.game_buf_class()
+
+    env = BigTwo()
+    init_obs = env.reset()
+
+    # player 0 is the one with the latest weight and the one we are training
+    policy_weight, value_weight = bot_weights
+    bot = config.bot_class(init_obs)
+    bot.set_weights(policy_weight, value_weight)
+
+    bot_ep_rews = []
+    bot_buf = config.player_buf_class()
+
+    opponent_bots = build_opponent_bots(init_obs, bot_weights, opponent_weights, config)
+
+    wrapped_env = SinglePlayerWrapper(
+        env=env, opponent_bots=opponent_bots, player_number=0
+    )
+
+    obs = wrapped_env.reset_and_start()
 
     sample_metric = SampleMetric()
     timestep = 0
     while True:
-        obs = env.get_current_player_obs()
+        action = bot.action(obs)
+        timestep += 1
 
-        if obs.current_player == 0:
-            action = bot.action(obs)
-            timestep += 1
-        else:
-            opponent = opponent_bots[obs.current_player]
-            action = opponent.action(obs)
-
-        new_obs, reward, done = env.step(action.raw)
+        obs, reward, done = wrapped_env.step(action)
         sample_metric.track_action(action.raw, reward)
 
-        if obs.current_player == 0:
-            # storing the trajectory per players because the awards is per player not sum of all players.
-            bot_ep_rews.append(reward)
-            bot_buf.store(
-                obs=action.transformed_obs,
-                act=action.cat,
-                rew=reward,
-                logp=action.logp,
-                mask=action.mask,
-            )
+        bot_ep_rews.append(reward)
+        bot_buf.store(
+            obs=action.transformed_obs,
+            act=action.cat,
+            rew=reward,
+            logp=action.logp,
+            mask=action.mask,
+        )
 
         epoch_ended = timestep == buffer_size
         if done or epoch_ended:
@@ -388,19 +438,19 @@ def collect_data_from_env_self_play(
 
             last_val = 0
             if not done and epoch_ended:
-                last_obs = env.get_player_obs(0)
-                transformed_obs = bot.transform_obs(last_obs)
+                transformed_obs = bot.transform_obs(obs)
                 if not isinstance(transformed_obs, Mapping):
                     transformed_obs = np.array([transformed_obs])
                 last_val = bot.predict_value(transformed_obs)
+
             bot_buf.finish_path(estimated_values.numpy().flatten(), last_val)
             buf.add(bot_buf)
 
             sample_metric.track_rewards(ep_ret, ep_len)
-            sample_metric.track_env(env, done)
+            sample_metric.track_env(wrapped_env.env, done)
 
             # reset game
-            env.reset()
+            obs = wrapped_env.reset_and_start()
             bot_buf = config.player_buf_class()
             bot_ep_rews = []
 
@@ -569,15 +619,15 @@ def train():
 
     # override config for serialise training
     config = ExperimentConfig()
-    config.epoch = 1000
+    config.epoch = 10
     config.lr = 0.0001
     config.opponent_update_freq = 25
     config.buffer_size = 1000
     config.mini_batch_size = 128
 
     new_dir = get_current_dt_format()
-    flush_config("experiments", new_dir, config)
-    train_summary_writer = tf.summary.create_file_writer(f"tensorboard/{new_dir}")
+    # flush_config("experiments", new_dir, config)
+    # train_summary_writer = tf.summary.create_file_writer(f"tensorboard/{new_dir}")
 
     previous_bots = []
     bot = config.bot_class(env.reset(), lr=config.lr)
@@ -617,10 +667,10 @@ def train():
         train_logger.info(m.summary())
         train_logger.info(m.cards_played_summary())
 
-        with train_summary_writer.as_default():
-            tf.summary.scalar("win_rate", m.win_rate(0), step=episode)
-            tf.summary.scalar("num_of_games", m.batch_games_played, step=episode)
-            tf.summary.scalar("avg_rets", np.mean(m.batch_rets), step=episode)
+        # with train_summary_writer.as_default():
+        #     tf.summary.scalar("win_rate", m.win_rate(0), step=episode)
+        #     tf.summary.scalar("num_of_games", m.batch_games_played, step=episode)
+        #     tf.summary.scalar("avg_rets", np.mean(m.batch_rets), step=episode)
 
 
 def merge_result(
@@ -667,6 +717,7 @@ def train_parallel(config: ExperimentConfig):
 
         for episode in range(config.epoch):
             sample_start_time = time.time()
+            gc.collect()
 
             weights = bot.get_weights()
 
@@ -718,50 +769,10 @@ def train_parallel(config: ExperimentConfig):
             task_queue.put("STOP")
 
 
-def play_with_cmd():
-    env = BigTwo()
-    init_obs = env.reset()
-
-    player_list = []
-    for i in range(BigTwo.number_of_players() - 1):
-        bot = SimplePPOBot(init_obs)
-        player_list.append(bot)
-
-    player_list.append(CommandLineBot())
-
-    episode_step = 0
-    done = False
-    while not done:
-        obs = env.get_current_player_obs()
-        print("turn ", episode_step)
-        print("current_player", obs.current_player)
-        print(f"before player hand: {obs.your_hands}")
-        print("last_player_played: ", obs.last_player_played)
-        print(f"cards played: {obs.last_cards_played}")
-
-        current_player = player_list[obs.current_player]
-
-        if isinstance(current_player, CommandLineBot):
-            action = current_player.action(obs)
-            new_obs, reward, done = env.step(action)
-            print(f"cmd bot reward: {reward}")
-        else:
-            action = current_player.action(obs)
-            new_obs, reward, done = env.step(action.raw)
-
-        episode_step += 1
-        print("action: " + str(action))
-        print(f"after player hand: {new_obs.your_hands}")
-        print(env.event_count)
-        print("====")
-
-    env.display_all_player_hands()
-
-
 if __name__ == "__main__":
     config_gpu()
     start_time = time.time()
-    train()
-    # train_parallel(ExperimentConfig())
+    # train()
+    train_parallel(ExperimentConfig())
     # play_with_cmd()
     print(f"Time taken: {time.time() - start_time:.3f} seconds")

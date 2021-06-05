@@ -1,19 +1,51 @@
 import random
+from typing import List
 
 import numpy as np
 
 from big_two_bot import BigTwoBot
 from bigtwo.bigtwo import BigTwoObservation
+from gamerunner.ppo_bot import (
+    generate_all_option,
+    generate_single_options,
+    generate_pair_options,
+    generate_combinations_options,
+)
+from playingcards.card import Suit, Rank, Card
 
 
 class RandomBot(BigTwoBot):
-    def action(self, observation: BigTwoObservation):
-        is_last_player = not observation.last_player_played == observation.current_player
+    def action(self, obs: BigTwoObservation):
+        # random bot always play diamond 3
+        if obs.is_first_turn():
+            selected_cards = np.repeat(0, 13)
+            for idx, card in enumerate(obs.your_hands):
+                if card != Card(Suit.diamond, Rank.three):
+                    continue
+
+                selected_cards[idx] = 1
+                return selected_cards
+
+        options: List[List[int]]
+        if obs.can_play_any_cards():
+            options = generate_all_option(obs)
+        elif len(obs.last_cards_played) == 1:
+            options = generate_single_options(obs.your_hands, obs.last_cards_played[0])
+        elif len(obs.last_cards_played) == 2:
+            options = generate_pair_options(obs.your_hands, obs.last_cards_played)
+        elif len(obs.last_cards_played) == 5:
+            options = generate_combinations_options(
+                obs.your_hands, obs.last_cards_played
+            )
+        else:
+            raise ValueError("unexpected scenario to generate invalid actions mask")
+
         selected_cards = np.repeat(0, 13)
-        if random.randint(0, 9) < 3 and is_last_player:
+        if len(options) == 0:
             return selected_cards
 
-        filter_hand = [x for x in observation.your_hands if not x == -1]
-        random_index = random.choice(range(len(filter_hand)))
-        selected_cards[random_index] = 1
+        random_opt_idx = random.choice(range(len(options)))
+
+        for idx in options[random_opt_idx]:
+            selected_cards[idx] = 1
         return selected_cards
