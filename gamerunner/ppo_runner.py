@@ -1,6 +1,7 @@
 import cProfile
 import io
 import itertools
+import linecache
 import logging
 import multiprocessing as mp
 import os
@@ -8,6 +9,7 @@ import pstats
 import random
 import sys
 import time
+import tracemalloc
 from collections import Counter
 from dataclasses import dataclass, asdict
 from datetime import datetime
@@ -21,6 +23,7 @@ import pandas as pd
 import seaborn as sns
 import tensorflow as tf
 from algorithm.agent import PPOBufferInterface
+from pympler import summary, muppy
 
 from bigtwo.bigtwo import BigTwo
 from gamerunner.cmd_line_bot import CommandLineBot
@@ -71,10 +74,10 @@ def create_player_rew_buf(num_of_player=4) -> Dict[int, List[int]]:
 
 @dataclass
 class ExperimentConfig:
-    epoch: int = 10
+    epoch: int = 10000
     buffer_size: int = 4000
     lr: float = 0.0001
-    mini_batch_size: int = 1028
+    mini_batch_size: int = 512
 
     num_of_worker: int = 10
 
@@ -137,12 +140,10 @@ class SampleMetric:
     def summary(self) -> str:
         return (
             f"return: {np.mean(self.batch_rets):.3f}, "
-            f"min returns: {np.min(self.batch_rets)}, "
             f"med returns: {np.median(self.batch_rets)}, "
             f"ep_len: {np.mean(self.batch_lens):.3f} "
             f"ep_hands_played: {np.mean(self.batch_hands_played):.3f} "
             f"ep_games_played: {self.batch_games_played}, "
-            f"event counter: {self.events_counter}"
         )
 
     def cards_played_summary(self) -> str:
@@ -363,7 +364,7 @@ def collect_data_from_env_random_bot(
     return buf, sample_metric
 
 
-def profile(func):
+def profile_time(func):
     def wrapper(*args, **kwargs):
         pr = cProfile.Profile()
         pr.enable()
@@ -382,7 +383,6 @@ def profile(func):
     return wrapper
 
 
-@profile
 def collect_data_from_env_self_play(
     bot_weights, opponent_weights: List[Any], config: ExperimentConfig, buffer_size=4000
 ) -> Tuple[PPOBufferInterface, SampleMetric]:
@@ -397,10 +397,17 @@ def collect_data_from_env_self_play(
     bot_buf = config.player_buf_class()
     buf = config.game_buf_class()
 
-    if len(opponent_weights) > 0:
-        opponents = {i + 1: random.choice(opponent_weights) for i in range(3)}
-    else:
-        opponents = {i + 1: bot_weights for i in range(3)}
+    opponent_bots = {}
+    for i in range(1, 4):
+        if len(opponent_weights) > 0:
+            opponent = config.bot_class(obs)
+            pw, vw = random.choice(opponent_weights)
+            opponent.set_weights(pw, vw)
+        else:
+            opponent = config.bot_class(obs)
+            opponent.set_weights(policy_weight, value_weight)
+
+        opponent_bots[i] = opponent
 
     sample_metric = SampleMetric()
     timestep = 0
@@ -408,13 +415,11 @@ def collect_data_from_env_self_play(
         obs = env.get_current_player_obs()
 
         if obs.current_player == 0:
-            bot.set_weights(policy_weight, value_weight)
+            action = bot.action(obs)
             timestep += 1
         else:
-            opp_policy_w, opp_value_w = opponents[obs.current_player]
-            bot.set_weights(opp_policy_w, opp_value_w)
-
-        action = bot.action(obs)
+            opponent = opponent_bots[obs.current_player]
+            action = opponent.action(obs)
 
         new_obs, reward, done = env.step(action.raw)
         sample_metric.track_action(action.raw, reward)
@@ -432,7 +437,6 @@ def collect_data_from_env_self_play(
 
         epoch_ended = timestep == buffer_size
         if done or epoch_ended:
-            bot.set_weights(policy_weight, value_weight)
             ep_ret, ep_len = 0, 0
 
             ep_rews = bot_ep_rews
@@ -568,15 +572,64 @@ def create_worker_task(
     return args
 
 
+def display_top(snapshot, key_type="lineno", limit=10):
+    snapshot = snapshot.filter_traces(
+        (
+            tracemalloc.Filter(False, "<frozen importlib._bootstrap>"),
+            tracemalloc.Filter(False, "<unknown>"),
+        )
+    )
+    top_stats = snapshot.statistics(key_type)
+
+    print("Top %s lines" % limit)
+    for index, stat in enumerate(top_stats[:limit], 1):
+        frame = stat.traceback[0]
+        print(
+            "#%s: %s:%s: %.1f KiB"
+            % (index, frame.filename, frame.lineno, stat.size / 1024)
+        )
+        line = linecache.getline(frame.filename, frame.lineno).strip()
+        if line:
+            print("    %s" % line)
+
+    other = top_stats[limit:]
+    if other:
+        size = sum(stat.size for stat in other)
+        print("%s other: %.1f KiB" % (len(other), size / 1024))
+    total = sum(stat.size for stat in top_stats)
+    print("Total allocated size: %.1f KiB" % (total / 1024))
+
+
+def display_memory_objects():
+    all_objects = muppy.get_objects()
+    sum1 = summary.summarize(all_objects)  # Prints out a summary of the large objects
+    summary.print_(sum1)
+
+
+def print_snapshot():
+    snapshot = tracemalloc.take_snapshot()
+    display_top(snapshot, limit=20)
+
+    top_stats = snapshot.statistics("traceback")
+
+    # pick the biggest memory block
+    for i in range(5):
+        print("")
+        stat = top_stats[i]
+        print("%s memory blocks: %.1f KiB" % (stat.count, stat.size / 1024))
+        for line in stat.traceback.format():
+            print(line)
+        print("")
+
+
 def train():
-    exp_st = time.time()
     train_logger = get_logger("train_ppo", log_level=logging.INFO)
     env = BigTwo()
 
     config = ExperimentConfig()
-    config.epoch = 3
+    config.epoch = 10
     config.lr = 0.0001
-    config.buffer_size = 1000
+    config.buffer_size = 1028
     config.mini_batch_size = 256
 
     new_dir = get_current_dt_format()
@@ -584,8 +637,10 @@ def train():
 
     previous_bots = []
     bot = config.bot_class(env.reset(), lr=config.lr)
-    experiment_log = ExperimentLogger(new_dir=new_dir)
     for episode in range(config.epoch):
+
+        print("episode: ", episode, "len: ", len(previous_bots))
+
         sample_start_time = time.time()
 
         weights = bot.get_weights()
@@ -599,14 +654,13 @@ def train():
         if episode % 2 == 0 and episode > 0:
             previous_bots.append(weights)
 
-        if len(previous_bots) > 20:
+        if len(previous_bots) > 10:
             previous_bots.pop(0)
 
         update_start_time = time.time()
         policy_loss, value_loss = bot.update(
             buf, mini_batch_size=config.mini_batch_size
         )
-
         update_time_taken = time.time() - update_start_time
 
         epoch_summary = (
@@ -619,16 +673,10 @@ def train():
         train_logger.info(m.summary())
         train_logger.info(m.cards_played_summary())
 
-        experiment_log.store(
-            m, policy_loss, value_loss, sample_time_taken, update_time_taken
-        )
-
         # with train_summary_writer.as_default():
         #     tf.summary.scalar("win_rate", m.win_rate(0), step=episode)
         #     tf.summary.scalar("num_of_games", m.batch_games_played, step=episode)
         #     tf.summary.scalar("avg_rets", np.mean(m.batch_rets), step=episode)
-
-    # experiment_log.flush("./experiments", config, exp_st)
 
 
 def merge_result(
@@ -649,8 +697,10 @@ def merge_result(
 
 
 def train_parallel(config: ExperimentConfig):
-    exp_st = time.time()
     mp.set_start_method("spawn")
+
+    os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"  # FATAL
+    logging.getLogger("tensorflow").setLevel(logging.FATAL)
 
     # setting up worker for sampling
     NUMBER_OF_PROCESSES = config.num_of_worker
@@ -664,10 +714,11 @@ def train_parallel(config: ExperimentConfig):
     previous_bots = []
 
     try:
+        new_dir = get_current_dt_format()
+        train_summary_writer = tf.summary.create_file_writer(f"tensorboard/{new_dir}")
         train_logger = get_logger("train_ppo", log_level=logging.INFO)
         env = BigTwo()
         bot = config.bot_class(env.reset(), lr=config.lr)
-        experiment_log = ExperimentLogger()
 
         for episode in range(config.epoch):
             sample_start_time = time.time()
@@ -687,10 +738,10 @@ def train_parallel(config: ExperimentConfig):
             buf, m = merge_result(result)
             sample_time_taken = time.time() - sample_start_time
 
-            if episode % 10 == 0 and episode > 0:
+            if episode % 100 == 0 and episode > 0:
                 previous_bots.append(weights)
 
-            if len(previous_bots) > 20:
+            if len(previous_bots) > 10:
                 previous_bots.pop(0)
 
             update_start_time = time.time()
@@ -709,11 +760,11 @@ def train_parallel(config: ExperimentConfig):
             train_logger.info(m.summary())
             train_logger.info(m.cards_played_summary())
 
-            experiment_log.store(
-                m, policy_loss, value_loss, sample_time_taken, update_time_taken
-            )
+            with train_summary_writer.as_default():
+                tf.summary.scalar("win_rate", m.win_rate(0), step=episode)
+                tf.summary.scalar("num_of_games", m.batch_games_played, step=episode)
+                tf.summary.scalar("avg_rets", np.mean(m.batch_rets), step=episode)
 
-        experiment_log.flush("./experiments", config, exp_st)
         # bot.save("save")
     finally:
         print("stopping workers")
