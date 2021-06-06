@@ -17,10 +17,8 @@ from multiprocessing import Queue, Process
 from pstats import SortKey
 from typing import Dict, List, Tuple, Mapping, Any
 
-import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-import seaborn as sns
 import tensorflow as tf
 from algorithm.agent import PPOBufferInterface
 from pympler import summary, muppy
@@ -43,9 +41,20 @@ def config_gpu():
         try:
             # Currently, memory growth needs to be the same across GPUs
             for gpu in gpus:
-                tf.config.experimental.set_memory_growth(gpu, True)
-            logical_gpus = tf.config.experimental.list_logical_devices("GPU")
-            print(len(gpus), "Physical GPUs,", len(logical_gpus), "Logical GPUs")
+                # tf.config.experimental.set_memory_growth(gpu, True)
+
+                result = tf.config.experimental.set_virtual_device_configuration(
+                    gpu,
+                    [
+                        tf.config.experimental.VirtualDeviceConfiguration(
+                            memory_limit=512
+                        )
+                    ],
+                )
+                print(result)
+
+            # logical_gpus = tf.config.experimental.list_logical_devices("GPU")
+            # print(len(gpus), "Physical GPUs,", len(logical_gpus), "Logical GPUs")
         except RuntimeError as e:
             # Memory growth must be set before GPUs have been initialized
             print(e)
@@ -74,14 +83,17 @@ def create_player_rew_buf(num_of_player=4) -> Dict[int, List[int]]:
 
 @dataclass
 class ExperimentConfig:
-    epoch: int = 10000
-    buffer_size: int = 4000
+    epoch: int = 2000
     lr: float = 0.0001
+    buffer_size: int = 4000
     mini_batch_size: int = 512
 
-    num_of_worker: int = 10
+    num_of_worker: int = 8
 
     clip_ratio: float = 0.3
+
+    opponent_buf_limit = 10
+    opponent_update_freq = 100
 
     bot_class = SimplePPOBot
     game_buf_class = GameBuffer
@@ -192,88 +204,16 @@ def get_current_dt_format() -> str:
     return datetime.now().strftime("%Y_%m_%d_%H_%M_%S")
 
 
-class ExperimentLogger:
-    def __init__(self, new_dir=get_current_dt_format()):
-        self.metrics: List[SampleMetric] = []
-        self.policy_loss = []
-        self.value_loss = []
-        self.sample_time = []
-        self.update_time = []
-        self.new_dir = new_dir
+def flush_config(root_dir: str, new_dir: str, config: ExperimentConfig):
+    new_dir_path = f"./{root_dir}/{new_dir}"
+    os.makedirs(new_dir_path)
 
-    def store(
-        self,
-        m: SampleMetric,
-        policy_loss,
-        value_loss,
-        sample_time_taken,
-        update_time_taken,
-    ):
-        self.metrics.append(m)
-        self.policy_loss.append(policy_loss)
-        self.value_loss.append(value_loss)
-        self.sample_time.append(sample_time_taken)
-        self.update_time.append(update_time_taken)
-
-    def flush(self, root_dir: str, config: ExperimentConfig, exp_st: float):
-        new_dir_path = f"./{root_dir}/{self.new_dir}"
-        os.makedirs(new_dir_path)
-
-        data = asdict(config)
-        data["time_taken"] = time.time() - exp_st
-        data["bot_class_name"] = config.bot_class.__name__
-        # As we are using all scalar values, we need to pass an index
-        # wrapping the dict in a list means the index of the values is 0
-        config_df = pd.DataFrame([data])
-        config_df.to_csv(f"{new_dir_path}/config.csv", index=False)
-
-        training_df = pd.DataFrame(
-            {
-                "policy_loss": self.policy_loss,
-                "value_loss": self.value_loss,
-                "sample_time": self.sample_time,
-                "update_time": self.update_time,
-            }
-        )
-        training_df.to_csv(f"{new_dir_path}/training.csv", index=False)
-
-        plot_data = {
-            "min_ret": [np.min(m.batch_rets) for m in self.metrics],
-            "avg_ret": [np.mean(m.batch_rets) for m in self.metrics],
-            "med_ret": [np.median(m.batch_rets) for m in self.metrics],
-        }
-
-        plt.figure()
-        ax = sns.lineplot(data=plot_data)
-        figure = ax.get_figure()
-        figure.savefig(f"{new_dir_path}/returns_plot.png", dpi=400)
-
-        game_length_data = {
-            "avg_game_played": [np.mean(m.batch_games_played) for m in self.metrics],
-            "avg_ep_len": [np.mean(m.batch_lens) for m in self.metrics],
-        }
-
-        plt.figure()
-        ax = sns.lineplot(data=game_length_data)
-        figure = ax.get_figure()
-        figure.savefig(f"{new_dir_path}/game_length.png", dpi=400)
-
-        plt.figure()
-        # players 0 (first player) is always the one with latest policy
-        win_rates_data = {"win_rates": [m.win_rate(0) for m in self.metrics]}
-        ax = sns.lineplot(data=win_rates_data)
-        figure = ax.get_figure()
-        figure.savefig(f"{new_dir_path}/win_rates.png", dpi=400)
-
-        with open(f"{new_dir_path}/game_history.txt", "w") as f:
-            for hist in self.metrics[-1].game_history:
-                f.write(str(hist))
-                f.write("\n")
-
-        with open(f"{new_dir_path}/action_history.txt", "w") as f:
-            for hist in self.metrics[-1].action_history:
-                f.write(str(hist))
-                f.write("\n")
+    data = asdict(config)
+    data["bot_class_name"] = config.bot_class.__name__
+    # As we are using all scalar values, we need to pass an index
+    # wrapping the dict in a list means the index of the values is 0
+    config_df = pd.DataFrame([data])
+    config_df.to_csv(f"{new_dir_path}/config.csv", index=False)
 
 
 def sample_worker(input_queue: Queue, output: Queue):
@@ -627,14 +567,17 @@ def train():
     train_logger = get_logger("train_ppo", log_level=logging.INFO)
     env = BigTwo()
 
+    # override config for serialise training
     config = ExperimentConfig()
-    config.epoch = 10
+    config.epoch = 1000
     config.lr = 0.0001
-    config.buffer_size = 1028
-    config.mini_batch_size = 256
+    config.opponent_update_freq = 25
+    config.buffer_size = 1000
+    config.mini_batch_size = 128
 
     new_dir = get_current_dt_format()
-    # train_summary_writer = tf.summary.create_file_writer(f"tensorboard/{new_dir}")
+    flush_config("experiments", new_dir, config)
+    train_summary_writer = tf.summary.create_file_writer(f"tensorboard/{new_dir}")
 
     previous_bots = []
     bot = config.bot_class(env.reset(), lr=config.lr)
@@ -652,10 +595,10 @@ def train():
 
         sample_time_taken = time.time() - sample_start_time
 
-        if episode % 2 == 0 and episode > 0:
+        if episode % config.opponent_update_freq == 0 and episode > 0:
             previous_bots.append(weights)
 
-        if len(previous_bots) > 10:
+        if len(previous_bots) > config.opponent_buf_limit:
             previous_bots.pop(0)
 
         update_start_time = time.time()
@@ -674,10 +617,10 @@ def train():
         train_logger.info(m.summary())
         train_logger.info(m.cards_played_summary())
 
-        # with train_summary_writer.as_default():
-        #     tf.summary.scalar("win_rate", m.win_rate(0), step=episode)
-        #     tf.summary.scalar("num_of_games", m.batch_games_played, step=episode)
-        #     tf.summary.scalar("avg_rets", np.mean(m.batch_rets), step=episode)
+        with train_summary_writer.as_default():
+            tf.summary.scalar("win_rate", m.win_rate(0), step=episode)
+            tf.summary.scalar("num_of_games", m.batch_games_played, step=episode)
+            tf.summary.scalar("avg_rets", np.mean(m.batch_rets), step=episode)
 
 
 def merge_result(
@@ -716,6 +659,7 @@ def train_parallel(config: ExperimentConfig):
 
     try:
         new_dir = get_current_dt_format()
+        flush_config("experiments", new_dir, config)
         train_summary_writer = tf.summary.create_file_writer(f"tensorboard/{new_dir}")
         train_logger = get_logger("train_ppo", log_level=logging.INFO)
         env = BigTwo()
@@ -739,10 +683,10 @@ def train_parallel(config: ExperimentConfig):
             buf, m = merge_result(result)
             sample_time_taken = time.time() - sample_start_time
 
-            if episode % 100 == 0 and episode > 0:
+            if episode % config.opponent_update_freq == 0 and episode > 0:
                 previous_bots.append(weights)
 
-            if len(previous_bots) > 10:
+            if len(previous_bots) > config.opponent_buf_limit:
                 previous_bots.pop(0)
 
             update_start_time = time.time()

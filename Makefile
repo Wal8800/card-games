@@ -1,10 +1,12 @@
 run_random:
 	PYTHONPATH=$(shell pwd) python3 gamerunner/random_runner.py
 
+run_ppo:
+    PYTHONPATH=$(shell pwd) python3 gamerunner/ppo_runner.py
+
 lint:
 	pylint ./bigtwo \
 	pylint ./playingcards
-
 
 setup:
 	sudo apt-get update \
