@@ -732,6 +732,13 @@ class BigTwo:
     def get_hands_played(self):
         return len(self.state)
 
+    def get_starting_player_number(self) -> int:
+        if len(self.state) == 0:
+            return BigTwo.UNKNOWN_PLAYER
+
+        player_number, _ = self.state[0]
+        return player_number
+
     def get_current_combination(self) -> List[Card]:
         if len(self.state) == 0:
             return []
