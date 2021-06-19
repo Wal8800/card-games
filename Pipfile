@@ -14,6 +14,8 @@ tensorflow = "*"
 seaborn = "*"
 matplotlib = "*"
 pympler = "*"
+tqdm = "*"
+tdqm = "*"
 
 [requires]
 python_version = "3.8"

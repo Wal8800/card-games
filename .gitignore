@@ -7,3 +7,5 @@ venv
 /experiments/
 /gamerunner/experiments/
 /gamerunner/tensorboard/
+/gamerunner/action_history/
+/gamerunner/analysis_result/
