@@ -72,17 +72,17 @@ def create_player_rew_buf(num_of_player=4) -> Dict[int, List[int]]:
 
 @dataclass
 class ExperimentConfig:
-    epoch: int = 1000
+    epoch: int = 10000
     lr: float = 0.0001
     buffer_size: int = 4000
     mini_batch_size: int = 512
 
-    num_of_worker: int = 8
+    num_of_worker: int = 10
 
     clip_ratio: float = 0.3
 
     opponent_buf_limit = 10
-    opponent_update_freq = 50
+    opponent_update_freq = 100
 
     bot_class = SimplePPOBot
     game_buf_class = GameBuffer
@@ -107,6 +107,11 @@ class SampleMetric:
         self.played_first_turn = []
         self.action_played = []
 
+        self.starting_hands = []
+
+        self.cards_left_when_lost = []
+        self.opponent_cards_left_when_won = []
+
     def track_action(self, obs: BigTwoObservation, action: List[Card]):
         target = obs.last_cards_played
         current_hand = copy.deepcopy(obs.your_hands.cards)
@@ -114,17 +119,33 @@ class SampleMetric:
             (obs.last_player_played, target, current_hand, action)
         )
 
-    def track_game_end(self, env: BigTwo, done=False):
+    def track_game_end(self, env: BigTwo, starting_hands: List[List[Card]], done=False):
         ep_turns = env.get_hands_played()
         self.batch_hands_played.append(ep_turns)
 
-        if done:
-            self.batch_games_played += 1
-            win = 1 if env.player_last_played == 0 else 0
-            self.win_count.append(win)
+        if not done:
+            return
 
-            played_first_turn = 1 if env.get_starting_player_number() == 0 else 0
-            self.played_first_turn.append(played_first_turn)
+        self.batch_games_played += 1
+        win = 1 if env.player_last_played == 0 else 0
+        self.win_count.append(win)
+
+        self.starting_hands.append(
+            (starting_hands, env.player_last_played, env.get_starting_player_number())
+        )
+
+        if env.player_last_played != 0:
+            self.cards_left_when_lost.append(len(env.player_hands[0]))
+        else:
+            opponent_hand_size = [
+                len(hand)
+                for player_number, hand in enumerate(env.player_hands)
+                if player_number != 0
+            ]
+            self.opponent_cards_left_when_won += opponent_hand_size
+
+        played_first_turn = 1 if env.get_starting_player_number() == 0 else 0
+        self.played_first_turn.append(played_first_turn)
 
     def track_rewards(self, ep_ret, ep_len):
         self.batch_rets.append(ep_ret)
@@ -150,6 +171,16 @@ class SampleMetric:
         result.win_count = self.win_count + other.win_count
         result.played_first_turn = self.played_first_turn + other.played_first_turn
         result.action_played = self.action_played + other.action_played
+
+        result.cards_left_when_lost = (
+            self.cards_left_when_lost + other.cards_left_when_lost
+        )
+        result.opponent_cards_left_when_won = (
+            self.opponent_cards_left_when_won + other.opponent_cards_left_when_won
+        )
+
+        result.starting_hands = self.starting_hands + other.starting_hands
+
         return result
 
     def win_rate(self):
@@ -188,9 +219,6 @@ def flush_config(root_dir: str, new_dir: str, config: ExperimentConfig):
 def flush_action_history(
     root_dir: str, new_dir: str, metric: SampleMetric, episode: int
 ):
-    if episode % 10 != 0:
-        return
-
     new_dir_path = f"./{root_dir}/{new_dir}"
     os.makedirs(new_dir_path, exist_ok=True)
 
@@ -198,6 +226,19 @@ def flush_action_history(
         pickle.dump(
             metric.action_played,
             open(f"{new_dir_path}/action_played_{episode}.pickle", "wb"),
+        )
+
+
+def flush_starting_hands(
+    root_dir: str, new_dir: str, metric: SampleMetric, episode: int
+):
+    new_dir_path = f"./{root_dir}/{new_dir}"
+    os.makedirs(new_dir_path, exist_ok=True)
+
+    if len(metric.starting_hands) > 0:
+        pickle.dump(
+            metric.starting_hands,
+            open(f"{new_dir_path}/starting_hands_{episode}.pickle", "wb"),
         )
 
 
@@ -253,6 +294,8 @@ class SinglePlayerWrapper:
 
         self.opponent_bots = opponent_map
 
+        self.starting_hands: List[List[Card]] = []
+
     def step(self, action):
         obs, _, done = self.env.step(action.raw)
         if done:
@@ -273,6 +316,7 @@ class SinglePlayerWrapper:
 
     def reset_and_start(self):
         obs = self.env.reset()
+        self.starting_hands = [copy.deepcopy(x.cards) for x in self.env.player_hands]
 
         while True:
             if obs.current_player == self.player_number:
@@ -374,7 +418,9 @@ def collect_data_from_env_self_play(
             buf.add(bot_buf)
 
             sample_metric.track_rewards(ep_ret, ep_len)
-            sample_metric.track_game_end(wrapped_env.env, done)
+            sample_metric.track_game_end(
+                wrapped_env.env, wrapped_env.starting_hands, done
+            )
 
             # reset game
             obs = wrapped_env.reset_and_start()
@@ -464,6 +510,14 @@ def log_with_tensorboard(train_summary_writer, m: SampleMetric, episode: int):
         tf.summary.scalar(
             "win_rate_without_starting", m.win_rate_without_starting(), step=episode
         )
+        tf.summary.scalar(
+            "avg_cards_left_when_lost", np.mean(m.cards_left_when_lost), step=episode
+        )
+        tf.summary.scalar(
+            "avg_cards_left_when_won",
+            np.mean(m.opponent_cards_left_when_won),
+            step=episode,
+        )
 
 
 def train():
@@ -472,15 +526,15 @@ def train():
 
     # override config for serialise training
     config = ExperimentConfig()
-    config.epoch = 5
+    config.epoch = 10
     config.lr = 0.0001
-    config.opponent_update_freq = 25
+    config.opponent_update_freq = 10
     config.buffer_size = 4000
     config.mini_batch_size = 1028
 
-    new_dir = get_current_dt_format()
+    new_dir = f"{get_current_dt_format()}_serialise"
     # flush_config("experiments", new_dir, config)
-    # train_summary_writer = tf.summary.create_file_writer(f"tensorboard/{new_dir}")
+    train_summary_writer = tf.summary.create_file_writer(f"tensorboard/{new_dir}")
 
     previous_bots = []
     bot = config.bot_class(env.reset(), lr=config.lr)
@@ -519,8 +573,14 @@ def train():
         train_logger.info(epoch_summary)
         train_logger.info(m.summary())
 
-        flush_action_history("action_history", new_dir, m, episode)
+        flush_starting_hands("starting_hands", new_dir, m, episode)
+        # flush_action_history("action_history", new_dir, m, episode)
         # log_with_tensorboard(train_summary_writer, m, episode)
+
+        if episode % 2 == 0:
+            save_bot_dir_path = f"save/{new_dir}"
+            os.makedirs(save_bot_dir_path, exist_ok=True)
+            # bot.agent.save(save_bot_dir_path)
 
 
 def merge_result(
@@ -606,7 +666,8 @@ def train_parallel(config: ExperimentConfig):
             train_logger.info(m.summary())
 
             log_with_tensorboard(train_summary_writer, m, episode)
-            flush_action_history("action_history", new_dir, m, episode)
+            if episode % 10 == 0:
+                flush_action_history("action_history", new_dir, m, episode)
         # bot.save("save")
     finally:
         print("stopping workers")
@@ -618,7 +679,7 @@ def train_parallel(config: ExperimentConfig):
 if __name__ == "__main__":
     config_gpu()
     start_time = time.time()
-    # train()
-    train_parallel(ExperimentConfig())
+    train()
+    # train_parallel(ExperimentConfig())
     # play_with_cmd()
     print(f"Time taken: {time.time() - start_time:.3f} seconds")

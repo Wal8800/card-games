@@ -3,9 +3,10 @@ venv
 */__pycache__
 .vscode
 /plots/
-/save/
 /experiments/
 /gamerunner/experiments/
 /gamerunner/tensorboard/
 /gamerunner/action_history/
 /gamerunner/analysis_result/
+/gamerunner/save/
+/gamerunner/starting_hands/

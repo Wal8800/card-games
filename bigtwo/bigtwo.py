@@ -256,6 +256,9 @@ class BigTwoHand(MutableSequence):
     def __repr__(self):
         return " ".join([str(c) for c in self.cards])
 
+    def is_full(self):
+        return len(self.cards) == 13
+
 
 class BigTwoObservation:
     def __init__(
@@ -300,7 +303,7 @@ class BigTwo:
     INVALID_MOVE_REWARD = 0
 
     def __init__(self):
-        self.player_hands = self.__create_player_hand()
+        self.player_hands: List[BigTwoHand] = self.__create_player_hand()
         self.state: List[Tuple[int, List[Card]]] = []
         self.past_actions: List[Tuple[int, List[Card]]] = []
         self.current_player = None

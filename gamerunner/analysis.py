@@ -5,11 +5,17 @@ from typing import List, Tuple
 
 import matplotlib.pyplot as plt
 import numpy as np
+import pandas as pd
 import seaborn as sns
 import tqdm
 
-from bigtwo.bigtwo import rank_order, BigTwoHand
-from playingcards.card import Card
+from bigtwo import bigtwo
+from bigtwo.bigtwo import rank_order, BigTwoHand, BigTwo
+from playingcards.card import Card, Deck
+
+pd.set_option("display.max_rows", 500)
+pd.set_option("display.max_columns", 500)
+pd.set_option("display.width", 100000)
 
 """
 question:
@@ -240,12 +246,63 @@ class EpisodeProcessors:
             p.save_data(output_dir)
 
 
+def analyse_starting_hands():
+    dir_folder = "2021_06_26_13_58_47_serialise"
+
+    data = {
+        "episodes": [],
+        "player_0_card_strength": [],
+        "player_1_card_strength": [],
+        "player_2_card_strength": [],
+        "player_3_card_strength": [],
+        "player_won": [],
+        "starting_player": [],
+    }
+
+    for episode in range(0, 10, 1):
+        with open(
+            f"starting_hands/{dir_folder}/starting_hands_{episode}.pickle", "rb"
+        ) as pickle_file:
+            result: List[Tuple[List[List[Card]], int, int]] = pickle.load(pickle_file)
+
+            for hands, player_won, starting_player in result:
+                data.get("player_won", []).append(player_won)
+                data.get("episodes", []).append(episode)
+                data.get("starting_player", []).append(starting_player)
+
+                for i, hand in enumerate(hands):
+                    bigtwo_hand = BigTwoHand(hand)
+                    data.get(f"player_{i}_card_strength", []).append(
+                        hand_strength_calculator(bigtwo_hand)
+                    )
+
+        break
+
+    df = pd.DataFrame(data=data)
+
+    def highest_hand_strength(row) -> int:
+
+        strengths = [
+            row[f"player_{player_number}_card_strength"] for player_number in range(4)
+        ]
+
+        return np.argmax(np.array(strengths))
+
+    df["player_with_strongest_hand"] = df.apply(highest_hand_strength, axis=1)
+
+    print(df.shape)
+
+    print(df[df.player_won != df.player_with_strongest_hand].shape)
+
+    print(df[df.player_won == 0].describe())
+
+
 def main():
-    dir_folder = "2021_06_13_10_35_52"
+    dir_folder = "2021_06_19_23_09_06"
 
     processors = EpisodeProcessors([PlayAnyCard(), PlayAgainstOpponent()])
 
-    for episode in tqdm.tqdm(range(0, 1000, 10)):
+    for episode in tqdm.tqdm(range(0, 5000, 10)):
         with open(
             f"action_history/{dir_folder}/action_played_{episode}.pickle", "rb"
         ) as pickle_file:
@@ -267,5 +324,56 @@ def main():
     processors.save_data(output_dir)
 
 
+def hand_strength_calculator(player_hand: BigTwoHand) -> int:
+    strength = sum([bigtwo.rank_order[card.rank] for card in player_hand])
+
+    for card_one, _ in player_hand.pairs:
+        strength += bigtwo.rank_order[card_one.rank]
+
+    for combination_types in player_hand.combinations:
+        if combination_types == BigTwo.STRAIGHT:
+            strength += 10
+        elif combination_types == BigTwo.FLUSH:
+            strength += 20
+        elif combination_types == BigTwo.FULL_HOUSE:
+            strength += 30
+        elif combination_types == BigTwo.FOUR_OF_A_KIND:
+            strength += 40
+        elif combination_types == BigTwo.STRAIGHT_FLUSH:
+            strength += 50
+
+    return strength
+
+
+def hand_strength():
+
+    strength_distribution = []
+    for _ in range(40000):
+        hands = Deck().shuffle_and_split(4)
+        player_hand = BigTwoHand(hands[0])
+        strength_distribution.append(hand_strength_calculator(player_hand))
+
+    sns.displot(data=strength_distribution)
+    plt.show()
+
+
+def hand_strength_for_winning_hands():
+    dir_folder = "2021_06_19_23_09_06"
+    count = 0
+    for episode in tqdm.tqdm(range(0, 5000, 10)):
+        with open(
+            f"action_history/{dir_folder}/action_played_{episode}.pickle", "rb"
+        ) as pickle_file:
+            result: List[Tuple[int, List[Card], List[Card], List[Card]]] = pickle.load(
+                pickle_file
+            )
+
+            for last_player_played, target, current_hand, action in result:
+                if len(current_hand) == len(action):
+                    count += 1
+
+    print(count)
+
+
 if __name__ == "__main__":
-    main()
+    analyse_starting_hands()
