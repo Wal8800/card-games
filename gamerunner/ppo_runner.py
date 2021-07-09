@@ -482,20 +482,22 @@ def display_memory_objects():
     summary.print_(sum1)
 
 
-def print_snapshot():
+def print_snapshot() -> tracemalloc.Snapshot:
     snapshot = tracemalloc.take_snapshot()
-    display_top(snapshot, limit=20)
+    # display_top(snapshot, limit=10)
 
     top_stats = snapshot.statistics("traceback")
 
     # pick the biggest memory block
-    for i in range(5):
-        print("")
+    for i in range(10):
+        # print("")
         stat = top_stats[i]
-        print("%s memory blocks: %.1f KiB" % (stat.count, stat.size / 1024))
-        for line in stat.traceback.format():
-            print(line)
-        print("")
+        # print("%s memory blocks: %.1f KiB" % (stat.count, stat.size / 1024))
+        # for line in stat.traceback.format():
+        #     print(line)
+        # print("")
+
+    return snapshot
 
 
 def log_with_tensorboard(train_summary_writer, m: SampleMetric, episode: int):
@@ -526,7 +528,7 @@ def train():
 
     # override config for serialise training
     config = ExperimentConfig()
-    config.epoch = 10
+    config.epoch = 200
     config.lr = 0.0001
     config.opponent_update_freq = 10
     config.buffer_size = 4000
@@ -534,7 +536,7 @@ def train():
 
     new_dir = f"{get_current_dt_format()}_serialise"
     # flush_config("experiments", new_dir, config)
-    train_summary_writer = tf.summary.create_file_writer(f"tensorboard/{new_dir}")
+    # train_summary_writer = tf.summary.create_file_writer(f"tensorboard/{new_dir}")
 
     previous_bots = []
     bot = config.bot_class(env.reset(), lr=config.lr)
@@ -552,8 +554,8 @@ def train():
 
         sample_time_taken = time.time() - sample_start_time
 
-        if episode % config.opponent_update_freq == 0 and episode > 0:
-            previous_bots.append(weights)
+        # if episode % config.opponent_update_freq == 0 and episode > 0:
+        #     previous_bots.append(weights)
 
         if len(previous_bots) > config.opponent_buf_limit:
             previous_bots.pop(0)
@@ -573,14 +575,14 @@ def train():
         train_logger.info(epoch_summary)
         train_logger.info(m.summary())
 
-        flush_starting_hands("starting_hands", new_dir, m, episode)
+        # flush_starting_hands("starting_hands", new_dir, m, episode)
         # flush_action_history("action_history", new_dir, m, episode)
         # log_with_tensorboard(train_summary_writer, m, episode)
 
         if episode % 2 == 0:
             save_bot_dir_path = f"save/{new_dir}"
             os.makedirs(save_bot_dir_path, exist_ok=True)
-            # bot.agent.save(save_bot_dir_path)
+            bot.agent.save(save_bot_dir_path)
 
 
 def merge_result(
