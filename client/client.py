@@ -34,7 +34,10 @@ class OpponentCardFrame:
                 widget.destroy()
 
         self.card_frame.columnconfigure(num_of_cards, weight=1)
-        self.card_frame.rowconfigure(0, weight=1)
+        self.card_frame.rowconfigure([0, 1], weight=1)
+
+        last_played_label = tk.Label(self.card_frame, text=f"{num_of_cards}")
+        last_played_label.grid(row=1, column=num_of_cards // 2)
 
         columnspan = 2 if num_of_cards > 8 else 1
         for i in range(num_of_cards):
@@ -73,30 +76,36 @@ class CardImages:
 
 
 class PlayedCardFrame:
-    def __init__(self, parent, x, y, cards_played: List[Card], card_images: CardImages):
+    def __init__(self, parent, x, y, obs: BigTwoObservation, card_images: CardImages):
         self.num_cards = 5
         self.card_frame = tk.Frame(master=parent, relief=tk.RAISED, borderwidth=1)
         self.card_frame.grid(row=x, column=y)
 
         self.card_frame.columnconfigure(self.num_cards, weight=1)
-        self.card_frame.rowconfigure(0, weight=1)
+        self.card_frame.rowconfigure([0, 1], weight=1)
 
         self.card_images = card_images
+        self.last_played_mapping = {0: "YOU", 1: "LEFT", 2: "TOP", 3: "RIGHT"}
 
-        self.update_cards(cards_played)
+        self.update_cards(obs)
 
-    def update_cards(self, cards_played: List[Card], clear=False):
+    def update_cards(self, obs: BigTwoObservation, clear=False):
         if clear:
             for widget in self.card_frame.winfo_children():
                 widget.destroy()
 
-        for i, card in enumerate(cards_played):
+        label_txt = self.last_played_mapping.get(obs.last_player_played, "")
+
+        last_played_label = tk.Label(self.card_frame, text=label_txt)
+        last_played_label.grid(row=1, column=2)
+
+        for i, card in enumerate(obs.last_cards_played):
             cards = tk.Label(
                 self.card_frame, image=self.card_images.get_card_image(card)
             )
             cards.grid(row=0, column=i)
 
-        for i in range(len(cards_played), self.num_cards):
+        for i in range(len(obs.last_cards_played), self.num_cards):
             cards = tk.Label(self.card_frame, image=self.card_images.get_card_back())
             cards.grid(row=0, column=i)
 
@@ -153,9 +162,7 @@ class BigTwoClient:
 
         self.selected_idx: List[tk.IntVar] = []
 
-        self.card_played_frame = PlayedCardFrame(
-            self.main, 1, 1, obs.last_cards_played, self.card_images
-        )
+        self.card_played_frame = PlayedCardFrame(self.main, 1, 1, obs, self.card_images)
 
         self.player_card_frame = tk.Frame(
             master=self.main, relief=tk.RAISED, borderwidth=1
@@ -174,7 +181,7 @@ class BigTwoClient:
         self.top_player_frame.update_cards(obs.num_card_per_player[1], clear=True)
         self.right_player_frame.update_cards(obs.num_card_per_player[2], clear=True)
 
-        self.card_played_frame.update_cards(obs.last_cards_played, clear=True)
+        self.card_played_frame.update_cards(obs, clear=True)
 
         self._update_play_hand(self.player_card_frame, obs.your_hands, clear=True)
 
