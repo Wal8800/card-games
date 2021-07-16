@@ -23,9 +23,9 @@ import numpy as np
 import pandas as pd
 import psutil
 import tensorflow as tf
-from algorithm.agent import PPOBufferInterface
 from pympler import summary, muppy
 
+from algorithm.agent import PPOBufferInterface
 from bigtwo.bigtwo import BigTwo, BigTwoObservation
 from gamerunner.ppo_bot import (
     SimplePPOBot,
@@ -72,7 +72,7 @@ def create_player_rew_buf(num_of_player=4) -> Dict[int, List[int]]:
 
 @dataclass
 class ExperimentConfig:
-    epoch: int = 10000
+    epoch: int = 20000
     lr: float = 0.0001
     buffer_size: int = 4000
     mini_batch_size: int = 512
@@ -668,9 +668,14 @@ def train_parallel(config: ExperimentConfig):
             train_logger.info(m.summary())
 
             log_with_tensorboard(train_summary_writer, m, episode)
-            if episode % 10 == 0:
+            if episode % 100 == 0 or episode == config.epoch - 1:
                 flush_action_history("action_history", new_dir, m, episode)
-        # bot.save("save")
+                flush_starting_hands("starting_hands", new_dir, m, episode)
+
+                save_bot_dir_path = f"save/{new_dir}_{episode}"
+                os.makedirs(save_bot_dir_path, exist_ok=True)
+                bot.agent.save(save_bot_dir_path)
+
     finally:
         print("stopping workers")
         # Tell child processes to stop
@@ -681,7 +686,7 @@ def train_parallel(config: ExperimentConfig):
 if __name__ == "__main__":
     config_gpu()
     start_time = time.time()
-    train()
-    # train_parallel(ExperimentConfig())
+    # train()
+    train_parallel(ExperimentConfig())
     # play_with_cmd()
     print(f"Time taken: {time.time() - start_time:.3f} seconds")
