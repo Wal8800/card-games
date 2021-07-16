@@ -269,11 +269,11 @@ class BigTwoObservation:
         current_player: int,
         last_player_played: int,
     ):
-        self.num_card_per_player = num_card_per_player
-        self.last_cards_played = last_cards_played
-        self.your_hands = your_hands
-        self.current_player = current_player
-        self.last_player_played = last_player_played
+        self.num_card_per_player: List[int] = num_card_per_player
+        self.last_cards_played: List[Card] = last_cards_played
+        self.your_hands: BigTwoHand = your_hands
+        self.current_player: int = current_player
+        self.last_player_played: int = last_player_played
 
     def can_skip(self) -> bool:
         return (

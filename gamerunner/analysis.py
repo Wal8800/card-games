@@ -10,7 +10,7 @@ import seaborn as sns
 import tqdm
 
 from bigtwo import bigtwo
-from bigtwo.bigtwo import rank_order, BigTwoHand, BigTwo
+from bigtwo.bigtwo import rank_order, BigTwoHand
 from playingcards.card import Card, Deck
 
 pd.set_option("display.max_rows", 500)
@@ -246,6 +246,61 @@ class EpisodeProcessors:
             p.save_data(output_dir)
 
 
+def winning_str_distribution():
+    dir_folder = "2021_07_10_10_21_42"
+
+    data = {
+        "episodes": [],
+        "player_0_card_strength": [],
+        "player_1_card_strength": [],
+        "player_2_card_strength": [],
+        "player_3_card_strength": [],
+        "player_won": [],
+        "starting_player": [],
+    }
+
+    for episode in list(range(0, 1000, 100)) + [999]:
+        with open(
+            f"starting_hands/{dir_folder}/starting_hands_{episode}.pickle", "rb"
+        ) as pickle_file:
+            result: List[Tuple[List[List[Card]], int, int]] = pickle.load(pickle_file)
+
+            for hands, player_won, starting_player in result:
+                data.get("player_won", []).append(player_won)
+                data.get("episodes", []).append(episode)
+                data.get("starting_player", []).append(starting_player)
+
+                for i, hand in enumerate(hands):
+                    bigtwo_hand = BigTwoHand(hand)
+                    data.get(f"player_{i}_card_strength", []).append(
+                        hand_strength_calculator(bigtwo_hand)
+                    )
+
+    df = pd.DataFrame(data=data)
+
+    def highest_hand_strength(row) -> int:
+
+        strengths = [
+            row[f"player_{player_number}_card_strength"] for player_number in range(4)
+        ]
+
+        return np.argmax(np.array(strengths))
+
+    def winning_hand_strength(row) -> int:
+        player_won_number = row["player_won"]
+
+        return row[f"player_{player_won_number}_card_strength"]
+
+    df["player_with_strongest_hand"] = df.apply(highest_hand_strength, axis=1)
+    df["winning_hand_str"] = df.apply(winning_hand_strength, axis=1)
+
+    print(df.head())
+    print(df["episodes"].value_counts())
+
+    sns.displot(data=df, x="winning_hand_str", hue="episodes")
+    plt.show()
+
+
 def analyse_starting_hands():
     dir_folder = "2021_06_26_13_58_47_serialise"
 
@@ -288,13 +343,21 @@ def analyse_starting_hands():
 
         return np.argmax(np.array(strengths))
 
+    def winning_hand_strength(row) -> int:
+        player_won_number = row["player_won"]
+
+        return row[f"player_{player_won_number}_card_strength"]
+
     df["player_with_strongest_hand"] = df.apply(highest_hand_strength, axis=1)
+    df["winning_hand_str"] = df.apply(winning_hand_strength, axis=1)
 
     print(df.shape)
+    print(df.head())
 
-    print(df[df.player_won != df.player_with_strongest_hand].shape)
+    print(df[df.winning_hand_str < 80])
 
-    print(df[df.player_won == 0].describe())
+    sns.displot(data=df["winning_hand_str"])
+    plt.show()
 
 
 def main():
@@ -327,20 +390,20 @@ def main():
 def hand_strength_calculator(player_hand: BigTwoHand) -> int:
     strength = sum([bigtwo.rank_order[card.rank] for card in player_hand])
 
-    for card_one, _ in player_hand.pairs:
-        strength += bigtwo.rank_order[card_one.rank]
-
-    for combination_types in player_hand.combinations:
-        if combination_types == BigTwo.STRAIGHT:
-            strength += 10
-        elif combination_types == BigTwo.FLUSH:
-            strength += 20
-        elif combination_types == BigTwo.FULL_HOUSE:
-            strength += 30
-        elif combination_types == BigTwo.FOUR_OF_A_KIND:
-            strength += 40
-        elif combination_types == BigTwo.STRAIGHT_FLUSH:
-            strength += 50
+    # for card_one, _ in player_hand.pairs:
+    #     strength += bigtwo.rank_order[card_one.rank]
+    #
+    # for combination_types in player_hand.combinations:
+    #     if combination_types == BigTwo.STRAIGHT:
+    #         strength += 10
+    #     elif combination_types == BigTwo.FLUSH:
+    #         strength += 20
+    #     elif combination_types == BigTwo.FULL_HOUSE:
+    #         strength += 30
+    #     elif combination_types == BigTwo.FOUR_OF_A_KIND:
+    #         strength += 40
+    #     elif combination_types == BigTwo.STRAIGHT_FLUSH:
+    #         strength += 50
 
     return strength
 
@@ -376,4 +439,4 @@ def hand_strength_for_winning_hands():
 
 
 if __name__ == "__main__":
-    analyse_starting_hands()
+    winning_str_distribution()

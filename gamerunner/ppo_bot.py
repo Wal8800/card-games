@@ -612,6 +612,54 @@ class SimplePPOBot(BigTwoBot):
         return obs_to_ohe(obs)
 
 
+class SavedPPOBot(BigTwoBot):
+    def __init__(self, dir_path: str, observation: BigTwoObservation):
+        self.action_cat_mapping, self.idx_cat_mapping = create_action_cat_mapping()
+        self.agent = self._create_agent(observation, dir_path)
+
+    def transform_obs(self, obs: BigTwoObservation) -> np.ndarray:
+        return obs_to_ohe(obs)
+
+    def action(self, observation: BigTwoObservation) -> PPOAction:
+        transformed_obs = self.transform_obs(observation)
+        action_mask = generate_action_mask(self.idx_cat_mapping, observation)
+
+        action_tensor, logp_tensor = self.agent.action(
+            obs=np.array([transformed_obs]), mask=action_mask
+        )
+        action_cat = action_tensor.numpy()
+
+        raw = self.action_cat_mapping[action_cat]
+
+        cards = [c for idx, c in enumerate(observation.your_hands) if raw[idx] == 1]
+
+        return PPOAction(
+            transformed_obs=transformed_obs,
+            raw_action=raw,
+            action_cat=action_cat,
+            action_mask=action_mask,
+            logp=logp_tensor.numpy(),
+            cards=cards,
+        )
+
+    def _create_agent(self, observation: BigTwoObservation, dir_path: str):
+        n_action = len(self.action_cat_mapping)
+        result = obs_to_ohe(observation)
+        obs_inp = layers.Input(shape=result.shape, name="obs")
+        x = layers.Dense(512, activation="relu")(obs_inp)
+        x = layers.Dense(n_action, activation="relu")(x)
+        output = layers.Dense(n_action)(x)
+        policy = keras.Model(inputs=obs_inp, outputs=output)
+
+        return PPOAgent(
+            policy,
+            get_mlp_vf(result.shape, hidden_units=256),
+            "BigTwo",
+            n_action,
+            dir_path=dir_path,
+        )
+
+
 def create_embedded_input_policy(n_action: int) -> keras.Model:
     # 52 cards + 1 empty
     card_dim = 53
