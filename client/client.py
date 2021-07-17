@@ -6,7 +6,7 @@ from typing import List
 import cairosvg
 from PIL import Image, ImageTk
 
-from bigtwo.bigtwo import BigTwo, BigTwoHand, BigTwoObservation
+from bigtwo.bigtwo import BigTwo, BigTwoHand
 from gamerunner.ppo_bot import SavedPPOBot, PPOAction
 from gamerunner.ppo_runner import SinglePlayerWrapper
 from playingcards.card import Suit, Rank, Card
@@ -17,32 +17,6 @@ suit_image_mapping = {
     Suit.clubs: "C",
     Suit.diamond: "D",
 }
-
-
-class OpponentCardFrame:
-    def __init__(self, parent, x, y, card_back, num_of_card):
-        self.card_frame = tk.Frame(master=parent, relief=tk.RAISED, borderwidth=1)
-        self.card_frame.grid(row=x, column=y)
-
-        self.card_back_img = card_back
-
-        self.update_cards(num_of_card)
-
-    def update_cards(self, num_of_cards, clear=False):
-        if clear:
-            for widget in self.card_frame.winfo_children():
-                widget.destroy()
-
-        self.card_frame.columnconfigure(num_of_cards, weight=1)
-        self.card_frame.rowconfigure([0, 1], weight=1)
-
-        last_played_label = tk.Label(self.card_frame, text=f"{num_of_cards}")
-        last_played_label.grid(row=1, column=num_of_cards // 2)
-
-        columnspan = 2 if num_of_cards > 8 else 1
-        for i in range(num_of_cards):
-            cards = tk.Label(self.card_frame, image=self.card_back_img)
-            cards.grid(row=0, column=i, columnspan=columnspan)
 
 
 class CardImages:
@@ -75,8 +49,51 @@ class CardImages:
         return self.card_images[self.CARD_BACK]
 
 
+class OpponentCardFrame:
+    def __init__(
+        self, parent, x: int, y: int, card_images: CardImages, hand: BigTwoHand
+    ):
+        self.card_frame = tk.Frame(master=parent, relief=tk.RAISED, borderwidth=1)
+        self.card_frame.grid(row=x, column=y)
+
+        self.card_images = card_images
+
+        self.update_cards(hand)
+
+    def update_cards(self, hand: BigTwoHand, clear=False, display_card=False):
+        if clear:
+            for widget in self.card_frame.winfo_children():
+                widget.destroy()
+
+        num_of_cards = len(hand)
+
+        self.card_frame.columnconfigure(num_of_cards, weight=1)
+        self.card_frame.rowconfigure([0, 1], weight=1)
+
+        last_played_label = tk.Label(self.card_frame, text=f"{num_of_cards}")
+        last_played_label.grid(row=1, column=num_of_cards // 2)
+
+        columnspan = 2 if num_of_cards > 8 else 1
+        for i, card in enumerate(hand):
+            card_img = (
+                self.card_images.get_card_image(card)
+                if display_card
+                else self.card_images.get_card_back()
+            )
+            card_label = tk.Label(self.card_frame, image=card_img)
+            card_label.grid(row=0, column=i, columnspan=columnspan)
+
+
 class PlayedCardFrame:
-    def __init__(self, parent, x, y, obs: BigTwoObservation, card_images: CardImages):
+    def __init__(
+        self,
+        parent,
+        x: int,
+        y: int,
+        last_player_played: int,
+        last_cards_played: List[Card],
+        card_images: CardImages,
+    ):
         self.num_cards = 5
         self.card_frame = tk.Frame(master=parent, relief=tk.RAISED, borderwidth=1)
         self.card_frame.grid(row=x, column=y)
@@ -87,25 +104,27 @@ class PlayedCardFrame:
         self.card_images = card_images
         self.last_played_mapping = {0: "YOU", 1: "LEFT", 2: "TOP", 3: "RIGHT"}
 
-        self.update_cards(obs)
+        self.update_cards(last_player_played, last_cards_played)
 
-    def update_cards(self, obs: BigTwoObservation, clear=False):
+    def update_cards(
+        self, last_player_played: int, last_cards_played: List[Card], clear=False
+    ):
         if clear:
             for widget in self.card_frame.winfo_children():
                 widget.destroy()
 
-        label_txt = self.last_played_mapping.get(obs.last_player_played, "")
+        label_txt = self.last_played_mapping.get(last_player_played, "")
 
         last_played_label = tk.Label(self.card_frame, text=label_txt)
         last_played_label.grid(row=1, column=2)
 
-        for i, card in enumerate(obs.last_cards_played):
+        for i, card in enumerate(last_cards_played):
             cards = tk.Label(
                 self.card_frame, image=self.card_images.get_card_image(card)
             )
             cards.grid(row=0, column=i)
 
-        for i in range(len(obs.last_cards_played), self.num_cards):
+        for i in range(len(last_cards_played), self.num_cards):
             cards = tk.Label(self.card_frame, image=self.card_images.get_card_back())
             cards.grid(row=0, column=i)
 
@@ -115,26 +134,33 @@ class BigTwoClient:
 
     def __init__(self):
         game = BigTwo()
-        init_obs = game.get_player_obs(0)
+
+        self.single_player_number = 0
+
+        init_obs = game.get_player_obs(self.single_player_number)
 
         # 3 bots
         opponent_bots = [
             SavedPPOBot(
-                dir_path="../gamerunner/save/2021_07_10_10_21_42",
+                dir_path="../gamerunner/save/2021_07_13_21_31_32_19999",
                 observation=init_obs,
             )
             for _ in range(3)
         ]
 
         self.wrapped_env = SinglePlayerWrapper(
-            env=game, opponent_bots=opponent_bots, single_player_number=0
+            env=game,
+            opponent_bots=opponent_bots,
+            single_player_number=self.single_player_number,
         )
 
-        obs = self.wrapped_env.reset_and_start()
+        self.wrapped_env.reset_and_start()
 
         self.main = tk.Tk()
         self.main.columnconfigure([0, 1, 2], weight=1, minsize=250)
         self.main.rowconfigure([0, 1, 2], weight=1, minsize=250)
+
+        self.display_opponent_cards = tk.BooleanVar(value=False)
 
         self.card_images = CardImages()
 
@@ -142,53 +168,67 @@ class BigTwoClient:
             self.main,
             1,
             0,
-            self.card_images.get_card_back(),
-            obs.num_card_per_player[0],
+            self.card_images,
+            self.wrapped_env.env.player_hands[1],
         )
         self.top_player_frame = OpponentCardFrame(
             self.main,
             0,
             1,
-            self.card_images.get_card_back(),
-            obs.num_card_per_player[1],
+            self.card_images,
+            self.wrapped_env.env.player_hands[2],
         )
         self.right_player_frame = OpponentCardFrame(
             self.main,
             1,
             2,
-            self.card_images.get_card_back(),
-            obs.num_card_per_player[2],
+            self.card_images,
+            self.wrapped_env.env.player_hands[3],
         )
 
         self.selected_idx: List[tk.IntVar] = []
 
-        self.card_played_frame = PlayedCardFrame(self.main, 1, 1, obs, self.card_images)
+        self.card_played_frame = PlayedCardFrame(
+            self.main,
+            1,
+            1,
+            self.wrapped_env.env.get_player_last_played(),
+            self.wrapped_env.env.get_last_cards_played(),
+            self.card_images,
+        )
 
         self.player_card_frame = tk.Frame(
             master=self.main, relief=tk.RAISED, borderwidth=1
         )
         self.player_card_frame.grid(row=2, column=1)
 
-        self._update_play_hand(self.player_card_frame, obs.your_hands)
+        self._update_play_hand(
+            self.player_card_frame,
+            self.wrapped_env.env.player_hands[self.single_player_number],
+        )
 
         self._add_control_frame(2, 2)
 
         self.main.geometry("1920x1080")
         self.main.resizable(width=0, height=0)
 
-    def _update_game(self, obs: BigTwoObservation):
-        self.left_player_frame.update_cards(obs.num_card_per_player[0], clear=True)
-        self.top_player_frame.update_cards(obs.num_card_per_player[1], clear=True)
-        self.right_player_frame.update_cards(obs.num_card_per_player[2], clear=True)
+    def _update_game(self):
+        self._update_opponent_cards()
 
-        self.card_played_frame.update_cards(obs, clear=True)
+        self.card_played_frame.update_cards(
+            self.wrapped_env.env.get_player_last_played(),
+            self.wrapped_env.env.get_last_cards_played(),
+            clear=True,
+        )
 
-        self._update_play_hand(self.player_card_frame, obs.your_hands, clear=True)
+        self._update_play_hand(
+            self.player_card_frame, self.wrapped_env.env.player_hands[0], clear=True
+        )
 
     def _reset_game(self):
-        obs = self.wrapped_env.reset_and_start()
+        self.wrapped_env.reset_and_start()
 
-        self._update_game(obs)
+        self._update_game()
 
     def _play_selected_idx(self):
         raw_action = [1 if v.get() >= 0 else 0 for v in self.selected_idx]
@@ -205,15 +245,15 @@ class BigTwoClient:
             cards=None,
         )
 
-        obs, rewards, done = self.wrapped_env.step(action)
+        _, rewards, done = self.wrapped_env.step(action)
 
-        self._update_game(obs)
+        self._update_game()
 
     def _add_control_frame(self, x: int, y: int):
         control_frame = tk.Frame(master=self.main, relief=tk.RAISED, borderwidth=1)
         control_frame.grid(row=x, column=y)
         control_frame.columnconfigure([0, 1], weight=1)
-        control_frame.rowconfigure([0, 1], weight=1)
+        control_frame.rowconfigure([0, 1, 2], weight=1)
 
         play_button = tk.Button(
             master=control_frame,
@@ -248,6 +288,33 @@ class BigTwoClient:
             height=5,
         )
         sort_by_suit_button.grid(row=1, column=1)
+
+        display_opponents_card = tk.Checkbutton(
+            master=control_frame,
+            command=self._update_opponent_cards,
+            variable=self.display_opponent_cards,
+            text="Display opponent cards",
+            onvalue=True,
+            offvalue=False,
+        )
+        display_opponents_card.grid(row=2, column=0)
+
+    def _update_opponent_cards(self):
+        self.left_player_frame.update_cards(
+            self.wrapped_env.env.player_hands[1],
+            clear=True,
+            display_card=self.display_opponent_cards.get(),
+        )
+        self.top_player_frame.update_cards(
+            self.wrapped_env.env.player_hands[2],
+            clear=True,
+            display_card=self.display_opponent_cards.get(),
+        )
+        self.right_player_frame.update_cards(
+            self.wrapped_env.env.player_hands[3],
+            clear=True,
+            display_card=self.display_opponent_cards.get(),
+        )
 
     def _update_play_hand(self, frame, hand: BigTwoHand, clear=False):
         if clear:

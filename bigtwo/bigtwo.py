@@ -604,9 +604,9 @@ class BigTwo:
             return self._apply_action(action)
 
         # there are cards played already
-        if not BigTwo.is_bigger(action, self.get_current_combination()):
+        if not BigTwo.is_bigger(action, self.get_last_cards_played()):
             # the cards that the player is played is not bigger than the existing combination so it's their turn again
-            if len(action) == len(self.get_current_combination()):
+            if len(action) == len(self.get_last_cards_played()):
                 self.__increment_event("smaller combinations")
             else:
                 self.__increment_event("unequal number of cards")
@@ -742,7 +742,7 @@ class BigTwo:
         player_number, _ = self.state[0]
         return player_number
 
-    def get_current_combination(self) -> List[Card]:
+    def get_last_cards_played(self) -> List[Card]:
         if len(self.state) == 0:
             return []
 
@@ -769,6 +769,13 @@ class BigTwo:
 
         return self.current_player
 
+    def get_player_last_played(self) -> int:
+        return (
+            self.player_last_played
+            if self.player_last_played is not None
+            else self.UNKNOWN_PLAYER
+        )
+
     def _current_observation(self, player_number: int) -> BigTwoObservation:
         num_card_per_player = []
         index = player_number
@@ -782,18 +789,12 @@ class BigTwo:
             if len(num_card_per_player) == len(self.player_hands) - 1:
                 break
 
-        last_cards_played = []
-        if len(self.state) > 0:
-            last_cards_played = self.get_current_combination()
-
         return BigTwoObservation(
             num_card_per_player,
-            last_cards_played,
+            self.get_last_cards_played(),
             self.player_hands[player_number],
             player_number,
-            self.player_last_played
-            if self.player_last_played is not None
-            else self.UNKNOWN_PLAYER,
+            self.get_player_last_played(),
         )
 
     def _apply_action(self, action) -> Tuple[BigTwoObservation, int, bool]:
