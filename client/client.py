@@ -169,21 +169,21 @@ class BigTwoClient:
             1,
             0,
             self.card_images,
-            self.wrapped_env.env.player_hands[1],
+            self.wrapped_env.get_left_opponent_hand(),
         )
         self.top_player_frame = OpponentCardFrame(
             self.main,
             0,
             1,
             self.card_images,
-            self.wrapped_env.env.player_hands[2],
+            self.wrapped_env.get_top_opponent_hand(),
         )
         self.right_player_frame = OpponentCardFrame(
             self.main,
             1,
             2,
             self.card_images,
-            self.wrapped_env.env.player_hands[3],
+            self.wrapped_env.get_right_opponent_hand(),
         )
 
         self.selected_idx: List[tk.IntVar] = []
@@ -301,17 +301,17 @@ class BigTwoClient:
 
     def _update_opponent_cards(self):
         self.left_player_frame.update_cards(
-            self.wrapped_env.env.player_hands[1],
+            self.wrapped_env.get_left_opponent_hand(),
             clear=True,
             display_card=self.display_opponent_cards.get(),
         )
         self.top_player_frame.update_cards(
-            self.wrapped_env.env.player_hands[2],
+            self.wrapped_env.get_top_opponent_hand(),
             clear=True,
             display_card=self.display_opponent_cards.get(),
         )
         self.right_player_frame.update_cards(
-            self.wrapped_env.env.player_hands[3],
+            self.wrapped_env.get_right_opponent_hand(),
             clear=True,
             display_card=self.display_opponent_cards.get(),
         )

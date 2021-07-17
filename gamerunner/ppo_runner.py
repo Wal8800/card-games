@@ -26,7 +26,7 @@ import tensorflow as tf
 from pympler import summary, muppy
 
 from algorithm.agent import PPOBufferInterface
-from bigtwo.bigtwo import BigTwo, BigTwoObservation
+from bigtwo.bigtwo import BigTwo, BigTwoObservation, BigTwoHand
 from gamerunner.ppo_bot import (
     SimplePPOBot,
     GameBuffer,
@@ -295,6 +295,18 @@ class SinglePlayerWrapper:
         self.opponent_bots = opponent_map
 
         self.starting_hands: List[List[Card]] = []
+
+    def get_left_opponent_hand(self) -> BigTwoHand:
+        left = self.player_number + 1 if self.player_number + 1 > 3 else 0
+        return self.env.player_hands[left]
+
+    def get_top_opponent_hand(self) -> BigTwoHand:
+        top = self.player_number + 2 if self.player_number + 2 > 3 else 0
+        return self.env.player_hands[top]
+
+    def get_right_opponent_hand(self) -> BigTwoHand:
+        right = self.player_number + 3 if self.player_number + 3 > 0 else 0
+        return self.env.player_hands[right]
 
     def step(self, action):
         obs, _, done = self.env.step(action.raw)
