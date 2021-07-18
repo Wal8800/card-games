@@ -204,44 +204,6 @@ def get_current_dt_format() -> str:
     return datetime.now().strftime("%Y_%m_%d_%H_%M_%S")
 
 
-def flush_config(root_dir: str, new_dir: str, config: ExperimentConfig):
-    new_dir_path = f"./{root_dir}/{new_dir}"
-    os.makedirs(new_dir_path)
-
-    data = asdict(config)
-    data["bot_class_name"] = config.bot_class.__name__
-    # As we are using all scalar values, we need to pass an index
-    # wrapping the dict in a list means the index of the values is 0
-    config_df = pd.DataFrame([data])
-    config_df.to_csv(f"{new_dir_path}/config.csv", index=False)
-
-
-def flush_action_history(
-    root_dir: str, new_dir: str, metric: SampleMetric, episode: int
-):
-    new_dir_path = f"./{root_dir}/{new_dir}"
-    os.makedirs(new_dir_path, exist_ok=True)
-
-    if len(metric.action_played) > 0:
-        pickle.dump(
-            metric.action_played,
-            open(f"{new_dir_path}/action_played_{episode}.pickle", "wb"),
-        )
-
-
-def flush_starting_hands(
-    root_dir: str, new_dir: str, metric: SampleMetric, episode: int
-):
-    new_dir_path = f"./{root_dir}/{new_dir}"
-    os.makedirs(new_dir_path, exist_ok=True)
-
-    if len(metric.starting_hands) > 0:
-        pickle.dump(
-            metric.starting_hands,
-            open(f"{new_dir_path}/starting_hands_{episode}.pickle", "wb"),
-        )
-
-
 def sample_worker(input_queue: Queue, output: Queue):
     config_gpu()
 
@@ -512,26 +474,72 @@ def print_snapshot() -> tracemalloc.Snapshot:
     return snapshot
 
 
-def log_with_tensorboard(train_summary_writer, m: SampleMetric, episode: int):
-    with train_summary_writer.as_default():
-        tf.summary.scalar("win_rate", m.win_rate(), step=episode)
-        tf.summary.scalar("num_of_games", m.batch_games_played, step=episode)
-        tf.summary.scalar("avg_rets", np.mean(m.batch_rets), step=episode)
-        tf.summary.scalar(
-            "system_memory_usage", psutil.virtual_memory().percent, step=episode
+class ExperimentLogger:
+    def __init__(self, dir_path: str):
+        self.dir_path = f"./experiments/{dir_path}"
+        os.makedirs(self.dir_path)
+
+        self.train_summary_writer = tf.summary.create_file_writer(
+            f"{self.dir_path}/tensorboard"
         )
-        tf.summary.scalar("win_rate_starting", m.win_rate_with_starting(), step=episode)
-        tf.summary.scalar(
-            "win_rate_without_starting", m.win_rate_without_starting(), step=episode
-        )
-        tf.summary.scalar(
-            "avg_cards_left_when_lost", np.mean(m.cards_left_when_lost), step=episode
-        )
-        tf.summary.scalar(
-            "avg_cards_left_when_won",
-            np.mean(m.opponent_cards_left_when_won),
-            step=episode,
-        )
+
+    def flush_config(self, config: ExperimentConfig):
+        data = asdict(config)
+        data["bot_class_name"] = config.bot_class.__name__
+        # As we are using all scalar values, we need to pass an index
+        # wrapping the dict in a list means the index of the values is 0
+        config_df = pd.DataFrame([data])
+        config_df.to_csv(f"{self.dir_path}/config.csv", index=False)
+
+    def flush_metric(self, episode: int, metric: SampleMetric):
+        self._flush_starting_hands(episode, metric)
+        self._flush_action_history(episode, metric)
+        self._flush_tensorboard(episode, metric)
+
+    def _flush_action_history(self, episode: int, metric: SampleMetric):
+        new_dir_path = f"./{self.dir_path}/action_history"
+        os.makedirs(new_dir_path, exist_ok=True)
+
+        if len(metric.action_played) > 0:
+            pickle.dump(
+                metric.action_played,
+                open(f"{new_dir_path}/action_played_{episode}.pickle", "wb"),
+            )
+
+    def _flush_starting_hands(self, episode: int, metric: SampleMetric):
+        new_dir_path = f"./{self.dir_path}/starting_hands"
+        os.makedirs(new_dir_path, exist_ok=True)
+
+        if len(metric.starting_hands) > 0:
+            pickle.dump(
+                metric.starting_hands,
+                open(f"{new_dir_path}/starting_hands_{episode}.pickle", "wb"),
+            )
+
+    def _flush_tensorboard(self, episode: int, m: SampleMetric):
+        with self.train_summary_writer.as_default():
+            tf.summary.scalar("win_rate", m.win_rate(), step=episode)
+            tf.summary.scalar("num_of_games", m.batch_games_played, step=episode)
+            tf.summary.scalar("avg_rets", np.mean(m.batch_rets), step=episode)
+            tf.summary.scalar(
+                "system_memory_usage", psutil.virtual_memory().percent, step=episode
+            )
+            tf.summary.scalar(
+                "win_rate_starting", m.win_rate_with_starting(), step=episode
+            )
+            tf.summary.scalar(
+                "win_rate_without_starting", m.win_rate_without_starting(), step=episode
+            )
+            tf.summary.scalar(
+                "avg_cards_left_when_lost",
+                np.mean(m.cards_left_when_lost),
+                step=episode,
+            )
+            tf.summary.scalar(
+                "avg_cards_left_when_won",
+                np.mean(m.opponent_cards_left_when_won),
+                step=episode,
+            )
 
 
 def train():
@@ -540,22 +548,19 @@ def train():
 
     # override config for serialise training
     config = ExperimentConfig()
-    config.epoch = 200
+    config.epoch = 10
     config.lr = 0.0001
     config.opponent_update_freq = 10
     config.buffer_size = 4000
     config.mini_batch_size = 1028
 
     new_dir = f"{get_current_dt_format()}_serialise"
-    # flush_config("experiments", new_dir, config)
-    # train_summary_writer = tf.summary.create_file_writer(f"tensorboard/{new_dir}")
+    experiment_logger = ExperimentLogger(new_dir)
+    experiment_logger.flush_config(config)
 
     previous_bots = []
     bot = config.bot_class(env.reset(), lr=config.lr)
     for episode in range(config.epoch):
-
-        print("episode: ", episode, "len: ", len(previous_bots))
-
         sample_start_time = time.time()
 
         weights = bot.get_weights()
@@ -587,12 +592,10 @@ def train():
         train_logger.info(epoch_summary)
         train_logger.info(m.summary())
 
-        # flush_starting_hands("starting_hands", new_dir, m, episode)
-        # flush_action_history("action_history", new_dir, m, episode)
-        # log_with_tensorboard(train_summary_writer, m, episode)
+        experiment_logger.flush_metric(episode, m)
 
         if episode % 2 == 0:
-            save_bot_dir_path = f"save/{new_dir}"
+            save_bot_dir_path = f"./experiments/{new_dir}/bot_save"
             os.makedirs(save_bot_dir_path, exist_ok=True)
             bot.agent.save(save_bot_dir_path)
 
@@ -633,8 +636,9 @@ def train_parallel(config: ExperimentConfig):
 
     try:
         new_dir = get_current_dt_format()
-        flush_config("experiments", new_dir, config)
-        train_summary_writer = tf.summary.create_file_writer(f"tensorboard/{new_dir}")
+        experiment_logger = ExperimentLogger(new_dir)
+        experiment_logger.flush_config(config)
+
         train_logger = get_logger("train_ppo", log_level=logging.INFO)
         env = BigTwo()
         bot = config.bot_class(env.reset(), lr=config.lr)
@@ -679,11 +683,9 @@ def train_parallel(config: ExperimentConfig):
             train_logger.info(epoch_summary)
             train_logger.info(m.summary())
 
-            log_with_tensorboard(train_summary_writer, m, episode)
-            if episode % 100 == 0 or episode == config.epoch - 1:
-                flush_action_history("action_history", new_dir, m, episode)
-                flush_starting_hands("starting_hands", new_dir, m, episode)
+            experiment_logger.flush_metric(episode, m)
 
+            if episode % 100 == 0 or episode == config.epoch - 1:
                 save_bot_dir_path = f"save/{new_dir}_{episode}"
                 os.makedirs(save_bot_dir_path, exist_ok=True)
                 bot.agent.save(save_bot_dir_path)
@@ -697,8 +699,5 @@ def train_parallel(config: ExperimentConfig):
 
 if __name__ == "__main__":
     config_gpu()
-    start_time = time.time()
-    # train()
-    train_parallel(ExperimentConfig())
-    # play_with_cmd()
-    print(f"Time taken: {time.time() - start_time:.3f} seconds")
+    train()
+    # train_parallel(ExperimentConfig())
