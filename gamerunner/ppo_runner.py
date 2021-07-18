@@ -259,15 +259,44 @@ class SinglePlayerWrapper:
         self.starting_hands: List[List[Card]] = []
 
     def get_left_opponent_hand(self) -> BigTwoHand:
-        left = self.player_number + 1 if self.player_number + 1 > 3 else 0
+        left = 0 if (self.player_number + 1) > 3 else self.player_number + 1
+        """
+        0 -> 1
+        1 -> 2
+        2 -> 3
+        3 -> 0
+        """
+
         return self.env.player_hands[left]
 
     def get_top_opponent_hand(self) -> BigTwoHand:
-        top = self.player_number + 2 if self.player_number + 2 > 3 else 0
+        top = (
+            self.player_number - 2
+            if (self.player_number + 2) > 3
+            else self.player_number + 2
+        )
+        """
+        0 -> 2
+        1 -> 3
+        2 -> 0
+        3 -> 1
+        """
+
         return self.env.player_hands[top]
 
     def get_right_opponent_hand(self) -> BigTwoHand:
-        right = self.player_number + 3 if self.player_number + 3 > 0 else 0
+        right = (
+            self.player_number - 1
+            if (self.player_number + 3) > 3
+            else self.player_number + 3
+        )
+        """
+        0 -> 3
+        1 -> 0
+        2 -> 1
+        3 -> 2
+        """
+
         return self.env.player_hands[right]
 
     def step(self, action):
