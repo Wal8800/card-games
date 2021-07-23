@@ -187,6 +187,7 @@ class PPOBuffer(PPOBufferInterface):
         return self.obs_buf, self.act_buf, self.adv_buf, self.ret_buf, self.logp_buf
 
 
+@tf.function
 def action_with_mask_x(model, obs, n_action, mask):
     logits = model(obs, training=False)
 
