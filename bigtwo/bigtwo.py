@@ -536,7 +536,22 @@ class BigTwo:
 
         raise ValueError("invalid card combinations")
 
+    def is_done(self) -> bool:
+        for hand in self.player_hands:
+            if len(hand) == 0:
+                return True
+
+        return False
+
     def step(self, raw_action: List[int]) -> Tuple[BigTwoObservation, int, bool]:
+        # only proceeds when game is not done.
+        if self.is_done():
+            return (
+                self._current_observation(self.current_player),
+                BigTwo.INVALID_MOVE_REWARD,
+                True,
+            )
+
         # check if raw_action is valid
         if len(raw_action) != 13:
             self.__increment_event("invalid raw action")

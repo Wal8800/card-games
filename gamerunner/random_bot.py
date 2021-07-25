@@ -3,8 +3,8 @@ from typing import List
 
 import numpy as np
 
-from big_two_bot import BigTwoBot
 from bigtwo.bigtwo import BigTwoObservation
+from gamerunner.big_two_bot import BigTwoBot
 from gamerunner.ppo_bot import (
     generate_all_option,
     generate_single_options,
