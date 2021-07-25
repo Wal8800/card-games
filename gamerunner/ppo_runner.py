@@ -17,7 +17,7 @@ from dataclasses import dataclass, asdict
 from datetime import datetime
 from multiprocessing import Queue, Process
 from pstats import SortKey
-from typing import Dict, List, Tuple, Mapping, Any
+from typing import Dict, List, Tuple, Any
 
 import numpy as np
 import pandas as pd
@@ -413,8 +413,7 @@ def collect_data_from_env_self_play(
             last_val = 0
             if not done and epoch_ended:
                 transformed_obs = bot.transform_obs(obs)
-                if not isinstance(transformed_obs, Mapping):
-                    transformed_obs = np.array([transformed_obs])
+                transformed_obs = np.array([transformed_obs])
                 last_val = bot.predict_value(transformed_obs)
 
             bot_buf.finish_path(estimated_values.numpy().flatten(), last_val)
@@ -600,8 +599,8 @@ def train():
 
         sample_time_taken = time.time() - sample_start_time
 
-        # if episode % config.opponent_update_freq == 0 and episode > 0:
-        #     previous_bots.append(weights)
+        if episode % config.opponent_update_freq == 0 and episode > 0:
+            previous_bots.append(weights)
 
         if len(previous_bots) > config.opponent_buf_limit:
             previous_bots.pop(0)

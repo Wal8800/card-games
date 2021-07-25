@@ -5,7 +5,8 @@ from bigtwo.bigtwo import (
     BigTwoHand,
     find_combinations_from_cards,
 )
-from playingcards.card import Card, Suit, Rank, Deck
+from gamerunner.random_bot import RandomBot
+from playingcards.card import Card, Suit, Rank
 
 
 class TestBigTwo(unittest.TestCase):
@@ -964,3 +965,29 @@ class TestBigTwo(unittest.TestCase):
             Card(Suit.hearts, Rank.five),
         ]
         self.assertTrue(BigTwo.is_straight(cards))
+
+    def test_step_when_game_done(self):
+        env = BigTwo()
+
+        while True:
+            obs = env.get_current_player_obs()
+            bot = RandomBot()
+            raw_action = bot.action(obs)
+            _, _, done = env.step(raw_action)
+
+            if done:
+                break
+
+        obs = env.get_current_player_obs()
+
+        current_player_number = obs.current_player
+
+        # play the first card
+        raw_action = [0] * 13
+        raw_action[0] = 1
+
+        _, _, done = env.step(raw_action)
+        self.assertTrue(done)
+
+        # assert the current player number didn't change
+        self.assertEqual(current_player_number, env.current_player)
