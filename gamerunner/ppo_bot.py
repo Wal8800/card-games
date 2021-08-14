@@ -1,17 +1,17 @@
 import itertools
-import random
 from typing import Dict, List, Tuple, Mapping
 
 import numpy as np
 import tensorflow.keras as keras
+from tensorflow.keras import layers
+
 from algorithm.agent import (
     PPOAgent,
     PPOBufferInterface,
     discounted_sum_of_rewards,
     get_mlp_vf,
+    SavedPPOAgent,
 )
-from tensorflow.keras import layers
-
 from bigtwo.bigtwo import BigTwoObservation, BigTwo, BigTwoHand
 from gamerunner.big_two_bot import BigTwoBot
 from playingcards.card import Card, Suit, Rank
@@ -613,15 +613,12 @@ class SimplePPOBot(BigTwoBot):
 
 
 class SavedPPOBot(BigTwoBot):
-    def __init__(self, dir_path: str, observation: BigTwoObservation):
+    def __init__(self, dir_path: str):
         self.action_cat_mapping, self.idx_cat_mapping = create_action_cat_mapping()
-        self.agent = self._create_agent(observation, dir_path)
-
-    def transform_obs(self, obs: BigTwoObservation) -> np.ndarray:
-        return obs_to_ohe(obs)
+        self.agent = self._create_agent(dir_path)
 
     def action(self, observation: BigTwoObservation) -> PPOAction:
-        transformed_obs = self.transform_obs(observation)
+        transformed_obs = obs_to_ohe(observation)
         action_mask = generate_action_mask(self.idx_cat_mapping, observation)
 
         action_tensor, logp_tensor = self.agent.action(
@@ -642,18 +639,10 @@ class SavedPPOBot(BigTwoBot):
             cards=cards,
         )
 
-    def _create_agent(self, observation: BigTwoObservation, dir_path: str):
+    def _create_agent(self, dir_path: str):
         n_action = len(self.action_cat_mapping)
-        result = obs_to_ohe(observation)
-        obs_inp = layers.Input(shape=result.shape, name="obs")
-        x = layers.Dense(512, activation="relu")(obs_inp)
-        x = layers.Dense(n_action, activation="relu")(x)
-        output = layers.Dense(n_action)(x)
-        policy = keras.Model(inputs=obs_inp, outputs=output)
 
-        return PPOAgent(
-            policy,
-            get_mlp_vf(result.shape, hidden_units=256),
+        return SavedPPOAgent(
             "BigTwo",
             n_action,
             dir_path=dir_path,

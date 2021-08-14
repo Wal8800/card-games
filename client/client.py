@@ -144,7 +144,6 @@ class BigTwoClient:
             SavedPPOBot(
                 dir_path="../gamerunner/experiments/2021_07_13_21_31_32/bot_save/2021_07_13_21_31_32_19999",
                 # dir_path="../gamerunner/experiments/2021_07_18_12_06_57_serialise/bot_save",
-                observation=init_obs,
             )
             for _ in range(3)
         ]

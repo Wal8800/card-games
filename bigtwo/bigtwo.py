@@ -1,9 +1,7 @@
 import itertools
 from collections import Counter
 from collections.abc import MutableSequence
-from typing import List, Dict, Tuple
-
-from gym import spaces
+from typing import List, Dict, Tuple, Optional
 
 from playingcards.card import Card, Deck, Suit, Rank
 
@@ -302,8 +300,14 @@ class BigTwo:
 
     INVALID_MOVE_REWARD = 0
 
-    def __init__(self):
-        self.player_hands: List[BigTwoHand] = self.__create_player_hand()
+    def __init__(self, hands: Optional[List[BigTwoHand]] = None):
+        if hands is None:
+            self.player_hands: List[BigTwoHand] = self.__create_player_hand()
+        else:
+            if len(hands) != self.number_of_players():
+                raise ValueError("expected to have 4 BigTwoHand")
+
+            self.player_hands: List[BigTwoHand] = hands
         self.state: List[Tuple[int, List[Card]]] = []
         self.past_actions: List[Tuple[int, List[Card]]] = []
         self.current_player = None
@@ -316,23 +320,6 @@ class BigTwo:
             for idx, player_hand in enumerate(self.player_hands):
                 if player_hand.have_diamond_three():
                     self.current_player = idx
-
-        self.observation_space = spaces.Tuple(
-            (
-                # num_card_per_player
-                spaces.Box(low=0, high=13, shape=(3,)),
-                # last_cards_played
-                spaces.Box(low=-1, high=51, shape=(5,)),
-                # your_hands
-                spaces.Box(low=-1, high=51, shape=(13,)),
-                # current_player_number
-                spaces.Discrete(4),
-                # last_player_played
-                spaces.Discrete(5),
-            )
-        )
-
-        self.action_space = spaces.MultiBinary(13)
 
     @staticmethod
     def combination_order():
