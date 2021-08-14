@@ -11,7 +11,7 @@ import tqdm
 
 from bigtwo import bigtwo
 from bigtwo.bigtwo import rank_order, BigTwoHand
-from playingcards.card import Card, Deck
+from playingcards.card import Card, Deck, Rank
 
 pd.set_option("display.max_rows", 500)
 pd.set_option("display.max_columns", 500)
@@ -249,55 +249,71 @@ class EpisodeProcessors:
 def winning_str_distribution():
     dir_folder = "2021_07_10_10_21_42"
 
-    data = {
-        "episodes": [],
-        "player_0_card_strength": [],
-        "player_1_card_strength": [],
-        "player_2_card_strength": [],
-        "player_3_card_strength": [],
-        "player_won": [],
-        "starting_player": [],
-    }
+    data = []
 
-    for episode in list(range(0, 1000, 100)) + [999]:
+    for episode in list(range(500, 1000, 100)) + [999]:
         with open(
-            f"starting_hands/{dir_folder}/starting_hands_{episode}.pickle", "rb"
+            f"experiments/{dir_folder}/starting_hands/starting_hands_{episode}.pickle",
+            "rb",
         ) as pickle_file:
             result: List[Tuple[List[List[Card]], int, int]] = pickle.load(pickle_file)
 
             for hands, player_won, starting_player in result:
-                data.get("player_won", []).append(player_won)
-                data.get("episodes", []).append(episode)
-                data.get("starting_player", []).append(starting_player)
-
+                row = {
+                    "player_won": player_won,
+                    "episodes": episode,
+                    "starting_player": starting_player,
+                }
                 for i, hand in enumerate(hands):
                     bigtwo_hand = BigTwoHand(hand)
-                    data.get(f"player_{i}_card_strength", []).append(
-                        hand_strength_calculator(bigtwo_hand)
+                    row[f"player_{i}_card_strength"] = hand_strength_calculator(
+                        bigtwo_hand
                     )
+
+                    ace_count, two_count = 0, 0
+                    for card in hand:
+                        if card.rank == Rank.ace:
+                            ace_count += 1
+                            continue
+
+                        if card.rank == Rank.two:
+                            two_count += 1
+                            continue
+                    row[f"player_{i}_num_of_ace"] = ace_count
+                    row[f"player_{i}_num_of_two"] = two_count
+
+                data.append(row)
 
     df = pd.DataFrame(data=data)
 
-    def highest_hand_strength(row) -> int:
+    def highest_hand_strength(row_data) -> int:
 
         strengths = [
-            row[f"player_{player_number}_card_strength"] for player_number in range(4)
+            row_data[f"player_{player_number}_card_strength"]
+            for player_number in range(4)
         ]
 
         return np.argmax(np.array(strengths))
 
-    def winning_hand_strength(row) -> int:
-        player_won_number = row["player_won"]
+    def winning_hand_strength(row_data) -> int:
+        player_won_number = row_data["player_won"]
 
-        return row[f"player_{player_won_number}_card_strength"]
+        return row_data[f"player_{player_won_number}_card_strength"]
+
+    def winning_hand_ace_two_count(row_data) -> int:
+        player_won_number = row_data["player_won"]
+        return (
+            row_data[f"player_{player_won_number}_num_of_ace"]
+            + row_data[f"player_{player_won_number}_num_of_two"]
+        )
 
     df["player_with_strongest_hand"] = df.apply(highest_hand_strength, axis=1)
     df["winning_hand_str"] = df.apply(winning_hand_strength, axis=1)
+    df["winning_hand_ace_two_count"] = df.apply(winning_hand_ace_two_count, axis=1)
 
-    print(df.head())
-    print(df["episodes"].value_counts())
-
-    sns.displot(data=df, x="winning_hand_str", hue="episodes")
+    temp = df[df["player_0_card_strength"] >= 110]
+    print(temp["player_won"].value_counts())
+    # sns.displot(data=df, x="player_0_card_strength")
     plt.show()
 
 

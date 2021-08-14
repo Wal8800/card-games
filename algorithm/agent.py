@@ -203,6 +203,46 @@ def action_with_mask_x(model, obs, n_action, mask):
     return sample_action, logp_pi
 
 
+class SavedPPOAgent:
+    def __init__(
+        self,
+        env_name: str,
+        n_action: int,
+        dir_path: str,
+    ):
+        self.env_name = env_name
+        self.n_action = n_action
+
+        self.policy = models.load_model(f"{dir_path}/{self.env_name}_policy")
+        self.vf = models.load_model(f"{dir_path}/{self.env_name}_vf")
+
+    def action(self, obs, mask=None):
+        if isinstance(obs, Mapping):
+            wrapped = {k: tf.constant(v) for k, v in obs.items()}
+        else:
+            wrapped = tf.constant(obs)
+        act_dim = tf.constant(self.n_action)
+
+        if mask is None:
+            return self._action(wrapped, act_dim)
+
+        return self._action_with_mask(wrapped, act_dim, tf.constant(mask))
+
+    @tf.function
+    def _action(self, obs, n_action):
+        logits = self.policy(obs)
+        logp_all = tf.nn.log_softmax(logits)
+
+        sample_action = tf.squeeze(tf.random.categorical(logits, 1))
+        logp_pi = tf.squeeze(
+            tf.reduce_sum(tf.one_hot(sample_action, depth=n_action) * logp_all, axis=1)
+        )
+        return sample_action, logp_pi
+
+    def _action_with_mask(self, obs, n_action, mask):
+        return action_with_mask_x(self.policy, obs, n_action, mask)
+
+
 class PPOAgent:
     """
     Discrete Action only
