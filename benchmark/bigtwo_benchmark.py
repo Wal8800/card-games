@@ -125,7 +125,6 @@ def run_benchmark_hands_list():
     with open("./benchmark_hands_list_2021_08_07.pickle", "rb") as pickle_file:
         fixture: List[List[List[Card]]] = pickle.load(pickle_file)
 
-    worker_done = []
     try:
         # Start worker processes
         for i in range(NUMBER_OF_PROCESSES):

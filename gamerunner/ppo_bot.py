@@ -1,5 +1,5 @@
 import itertools
-from typing import Dict, List, Tuple, Mapping
+from typing import Dict, List, Tuple, Mapping, Optional, Union, Iterable
 
 import numpy as np
 import tensorflow.keras as keras
@@ -376,6 +376,15 @@ class MultiInputPlayerBuffer:
         self.ret_buf = discounted_sum_of_rewards(rews, self.gamma)[:-1]
 
 
+def set_or_add(
+    original: Optional[np.ndarray], new: Union[np.ndarray, Iterable]
+) -> np.ndarray:
+    if original is None:
+        return np.array(new)
+
+    return np.append(original, new, axis=0)
+
+
 class GameBuffer(PPOBufferInterface):
     def __init__(self):
         self.obs_buf = None
@@ -387,41 +396,13 @@ class GameBuffer(PPOBufferInterface):
         self.mask_buf = None
 
     def add(self, pbuf: PlayerBuffer):
-        self.obs_buf = (
-            np.array(pbuf.obs_buf)
-            if self.obs_buf is None
-            else np.append(self.obs_buf, pbuf.obs_buf, axis=0)
-        )
-        self.act_buf = (
-            np.array(pbuf.act_buf)
-            if self.act_buf is None
-            else np.append(self.act_buf, pbuf.act_buf, axis=0)
-        )
-        self.adv_buf = (
-            pbuf.adv_buf
-            if self.adv_buf is None
-            else np.append(self.adv_buf, pbuf.adv_buf, axis=0)
-        )
-        self.rew_buf = (
-            np.array(pbuf.rew_buf)
-            if self.rew_buf is None
-            else np.append(self.rew_buf, pbuf.rew_buf, axis=0)
-        )
-        self.ret_buf = (
-            pbuf.ret_buf
-            if self.ret_buf is None
-            else np.append(self.ret_buf, pbuf.ret_buf, axis=0)
-        )
-        self.logp_buf = (
-            np.array(pbuf.logp_buf)
-            if self.logp_buf is None
-            else np.append(self.logp_buf, pbuf.logp_buf, axis=0)
-        )
-        self.mask_buf = (
-            np.array(pbuf.mask_buf)
-            if self.mask_buf is None
-            else np.append(self.mask_buf, pbuf.mask_buf, axis=0)
-        )
+        self.obs_buf = set_or_add(self.obs_buf, pbuf.obs_buf)
+        self.act_buf = set_or_add(self.act_buf, pbuf.act_buf)
+        self.adv_buf = set_or_add(self.adv_buf, pbuf.adv_buf)
+        self.rew_buf = set_or_add(self.rew_buf, pbuf.rew_buf)
+        self.ret_buf = set_or_add(self.ret_buf, pbuf.ret_buf)
+        self.logp_buf = set_or_add(self.logp_buf, pbuf.logp_buf)
+        self.mask_buf = set_or_add(self.mask_buf, pbuf.mask_buf)
 
     def get(self):
         return (
@@ -461,36 +442,12 @@ class MultiInputGameBuffer(PPOBufferInterface):
         else:
             self.obs_buf = {k: v + pbuf.obs_buf[k] for k, v in self.obs_buf.items()}
 
-        self.act_buf = (
-            np.array(pbuf.act_buf)
-            if self.act_buf is None
-            else np.append(self.act_buf, pbuf.act_buf, axis=0)
-        )
-        self.adv_buf = (
-            pbuf.adv_buf
-            if self.adv_buf is None
-            else np.append(self.adv_buf, pbuf.adv_buf, axis=0)
-        )
-        self.rew_buf = (
-            np.array(pbuf.rew_buf)
-            if self.rew_buf is None
-            else np.append(self.rew_buf, pbuf.rew_buf, axis=0)
-        )
-        self.ret_buf = (
-            pbuf.ret_buf
-            if self.ret_buf is None
-            else np.append(self.ret_buf, pbuf.ret_buf, axis=0)
-        )
-        self.logp_buf = (
-            np.array(pbuf.logp_buf)
-            if self.logp_buf is None
-            else np.append(self.logp_buf, pbuf.logp_buf, axis=0)
-        )
-        self.mask_buf = (
-            np.array(pbuf.mask_buf)
-            if self.mask_buf is None
-            else np.append(self.mask_buf, pbuf.mask_buf, axis=0)
-        )
+        self.act_buf = set_or_add(self.act_buf, pbuf.act_buf)
+        self.adv_buf = set_or_add(self.adv_buf, pbuf.adv_buf)
+        self.rew_buf = set_or_add(self.rew_buf, pbuf.rew_buf)
+        self.ret_buf = set_or_add(self.ret_buf, pbuf.ret_buf)
+        self.logp_buf = set_or_add(self.logp_buf, pbuf.logp_buf)
+        self.mask_buf = set_or_add(self.mask_buf, pbuf.mask_buf)
 
     def get(self):
         return (
