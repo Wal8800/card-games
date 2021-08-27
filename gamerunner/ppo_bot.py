@@ -67,6 +67,25 @@ def obs_to_arr(obs: BigTwoObservation) -> np.ndarray:
     return np.array(data)
 
 
+def cards_to_ohe(cards: List[Card], padded_length: int) -> List[int]:
+    if len(cards) > padded_length:
+        raise ValueError("expected card length to be less or equal to padded length")
+    data = []
+
+    for i in range(padded_length):
+        # add place holder for empty card
+        if i >= len(cards):
+            data += empty_suit
+            data += empty_rank
+            continue
+
+        curr_card = cards[i]
+        data += suit_ohe[curr_card.suit]
+        data += rank_ohe[curr_card.rank]
+
+    return data
+
+
 def obs_to_ohe(obs: BigTwoObservation) -> np.ndarray:
     data = []
     data += obs.num_card_per_player
@@ -89,26 +108,8 @@ def obs_to_ohe(obs: BigTwoObservation) -> np.ndarray:
     # cards length
     data.append(len(obs.last_cards_played))
 
-    for i in range(5):
-        # add place holder for empty card
-        if i >= len(obs.last_cards_played):
-            data += empty_suit
-            data += empty_rank
-            continue
-
-        curr_card = obs.last_cards_played[i]
-        data += suit_ohe[curr_card.suit]
-        data += rank_ohe[curr_card.rank]
-
-    for i in range(13):
-        if i >= len(obs.your_hands):
-            data += empty_suit
-            data += empty_rank
-            continue
-
-        curr_card = obs.your_hands[i]
-        data += suit_ohe[curr_card.suit]
-        data += rank_ohe[curr_card.rank]
+    data += cards_to_ohe(obs.last_cards_played, 5)
+    data += cards_to_ohe(obs.your_hands.cards, 13)
 
     return np.array(data)
 
@@ -649,6 +650,31 @@ def create_embedded_input_vf() -> keras.Model:
     x = layers.Dense(128, activation="relu")(x)
     output = layers.Dense(1)(x)
     return keras.Model(inputs=inputs, outputs=output)
+
+
+class SequenceInputBot(SimplePPOBot):
+    def _create_agent(self, observation: BigTwoObservation, lr=0.0001, clip_ratio=0.3):
+        n_action = len(self.action_cat_mapping)
+
+        return PPOAgent(
+            create_embedded_input_policy(n_action),
+            create_embedded_input_vf(),
+            "BigTwo",
+            n_action,
+            policy_lr=lr,
+            value_lr=lr,
+            clip_ratio=clip_ratio,
+        )
+
+    def transform_obs(self, obs: BigTwoObservation):
+        inputs = {}
+
+        inputs["last_n_cards_played"] = self._to_seq_input(obs.last_n_cards_played)
+
+        return inputs
+
+    def _to_seq_input(self, last_n_cards_played: List[List[Card]]) -> np.ndarray:
+        return np.array([])
 
 
 class EmbeddedInputBot(SimplePPOBot):

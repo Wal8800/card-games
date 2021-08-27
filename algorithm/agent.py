@@ -511,3 +511,29 @@ def get_2d_conv_vf(obs_shape) -> keras.Model:
     output = layers.Dense(1)(x)
 
     return keras.Model(inputs=obs_inp, outputs=output)
+
+
+def get_mlp_lstm_policy(obs_shape, act_dim) -> keras.Model:
+    """
+    :param obs_shape: [timesteps, feature]
+    :param act_dim:
+    :return:
+    """
+    obs_inp = layers.Input(shape=obs_shape, name="obs")
+    x = layers.LSTM(10)(obs_inp)
+    x = layers.Dense(64, activation="relu")(x)
+    output = layers.Dense(act_dim)(x)
+    return keras.Model(inputs=obs_inp, outputs=output)
+
+
+def get_mlp_lstm_value(obs_shape) -> keras.Model:
+    """
+    :param obs_shape: [timesteps, feature]
+    :param act_dim:
+    :return:
+    """
+    obs_inp = layers.Input(shape=obs_shape, name="obs")
+    x = layers.LSTM(10)(obs_inp)
+    x = layers.Dense(64, activation="relu")(x)
+    output = layers.Dense(1)(x)
+    return keras.Model(inputs=obs_inp, outputs=output)
