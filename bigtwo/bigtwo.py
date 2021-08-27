@@ -273,6 +273,8 @@ class BigTwoObservation:
         self.current_player: int = current_player
         self.last_player_played: int = last_player_played
 
+        self.last_n_cards_played: List[List[Card]] = []
+
     def can_skip(self) -> bool:
         return (
             self.last_player_played != BigTwo.UNKNOWN_PLAYER

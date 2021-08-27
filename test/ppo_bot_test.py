@@ -12,6 +12,8 @@ from gamerunner.ppo_bot import (
     EmbeddedInputBot,
     SimplePPOBot,
     RandomPPOBot,
+    cards_to_ohe,
+    obs_to_ohe,
 )
 from playingcards.card import Card, Suit, Rank
 
@@ -246,3 +248,85 @@ class TestPPOBot(unittest.TestCase):
         second_result = test_action(test_model, np.array([1])).numpy().flatten()
 
         self.assertNotEqual(first_result, second_result)
+
+    def test_obs_to_ohe(self):
+        cards = [
+            Card(Suit.hearts, Rank.ace),
+            Card(Suit.clubs, Rank.ten),
+            Card(Suit.diamond, Rank.two),
+            Card(Suit.spades, Rank.seven),
+            Card(Suit.hearts, Rank.king),
+        ]
+
+        played = []
+
+        hand = BigTwoHand(cards)
+        obs = BigTwoObservation([13, 13, 13], played, hand, 1, BigTwo.UNKNOWN_PLAYER)
+
+        actual = obs_to_ohe(obs)
+
+        # fmt: off
+        expected = [
+            # num_card_per_player
+            13, 13, 13,
+
+            # first turn
+            1,
+
+            # current player_number
+            0, 1, 0, 0,
+
+            # last player number
+            0, 0, 0, 0,
+
+            # cards length
+            0,
+
+            # last played cards
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+
+            # your hand
+            0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1,
+            0, 1, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0,
+            0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0,
+            0, 0, 1, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+        ]
+        # fmt: on
+
+        np.testing.assert_allclose(actual, np.array(expected), rtol=1e-5, atol=0)
+
+    def test_cards_to_ohe_full(self):
+        cards = [
+            Card(Suit.hearts, Rank.ace),
+            Card(Suit.clubs, Rank.ten),
+            Card(Suit.diamond, Rank.two),
+            Card(Suit.spades, Rank.seven),
+            Card(Suit.hearts, Rank.king),
+        ]
+
+        actual = cards_to_ohe(cards, 5)
+
+        # fmt: off
+        expected = [
+            0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1,
+            0, 1, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0,
+            0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0,
+            0, 0, 1, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+        ]
+        # fmt: on
+
+        self.assertEqual(actual, expected)
