@@ -14,6 +14,7 @@ from gamerunner.ppo_bot import (
     RandomPPOBot,
     cards_to_ohe,
     obs_to_ohe,
+    PastCardsPlayedBot,
 )
 from playingcards.card import Card, Suit, Rank
 
@@ -225,6 +226,13 @@ class TestPPOBot(unittest.TestCase):
 
         init_obs = env.reset()
         bot = RandomPPOBot()
+        bot.action(init_obs)
+
+    def test_sequence_input_bot_action(self):
+        env = BigTwo()
+
+        init_obs = env.reset()
+        bot = PastCardsPlayedBot(init_obs)
         bot.action(init_obs)
 
     def test_set_weight_and_tf_function(self):

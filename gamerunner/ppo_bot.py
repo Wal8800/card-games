@@ -42,6 +42,9 @@ rank_ohe = {
 empty_suit = [0, 0, 0, 0]
 empty_rank = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
 
+PAST_CARDS_PLAYED = "past_cards_played"
+CURRENT_OBS = "current_obs"
+
 
 def obs_to_arr(obs: BigTwoObservation) -> np.ndarray:
     data = []
@@ -566,7 +569,7 @@ class SimplePPOBot(BigTwoBot):
     def update(self, buffer, mini_batch_size: int):
         return self.agent.update(buffer, mini_batch_size, mask_buf=buffer.mask_buf)
 
-    def transform_obs(self, obs: BigTwoObservation) -> np.ndarray:
+    def transform_obs(self, obs: BigTwoObservation):
         return obs_to_ohe(obs)
 
 
@@ -652,13 +655,47 @@ def create_embedded_input_vf() -> keras.Model:
     return keras.Model(inputs=inputs, outputs=output)
 
 
-class SequenceInputBot(SimplePPOBot):
+def lstm_policy(past_card_played_shape, obs_inp_shape, n_action: int) -> keras.Model:
+    seq_inp = layers.Input(shape=past_card_played_shape, name=PAST_CARDS_PLAYED)
+    x = layers.LSTM(10)(seq_inp)
+
+    obs_inp = layers.Input(shape=obs_inp_shape, name=CURRENT_OBS)
+    y = layers.Dense(64, activation="relu")(obs_inp)
+
+    concat = layers.Concatenate(axis=1)([x, y])
+    z = layers.Dense(64, activation="relu")(concat)
+    output = layers.Dense(n_action)(z)
+    return keras.Model(inputs=[seq_inp, obs_inp], outputs=output)
+
+
+def lstm_value(past_card_played_shape, obs_inp_shape) -> keras.Model:
+    seq_inp = layers.Input(shape=past_card_played_shape, name=PAST_CARDS_PLAYED)
+    x = layers.LSTM(10)(seq_inp)
+
+    obs_inp = layers.Input(shape=obs_inp_shape, name=CURRENT_OBS)
+    y = layers.Dense(64, activation="relu")(obs_inp)
+
+    concat = layers.Concatenate(axis=1)([x, y])
+    z = layers.Dense(64, activation="relu")(concat)
+    output = layers.Dense(1)(z)
+    return keras.Model(inputs=[seq_inp, obs_inp], outputs=output)
+
+
+class PastCardsPlayedBot(SimplePPOBot):
     def _create_agent(self, observation: BigTwoObservation, lr=0.0001, clip_ratio=0.3):
         n_action = len(self.action_cat_mapping)
 
+        transformed = self.transform_obs(observation)
+
+        past_card_played_shape = transformed[PAST_CARDS_PLAYED].shape
+        obs_inp_shape = transformed[CURRENT_OBS].shape
         return PPOAgent(
-            create_embedded_input_policy(n_action),
-            create_embedded_input_vf(),
+            lstm_policy(
+                past_card_played_shape,
+                obs_inp_shape,
+                n_action,
+            ),
+            lstm_value(past_card_played_shape, obs_inp_shape),
             "BigTwo",
             n_action,
             policy_lr=lr,
@@ -666,15 +703,50 @@ class SequenceInputBot(SimplePPOBot):
             clip_ratio=clip_ratio,
         )
 
-    def transform_obs(self, obs: BigTwoObservation):
-        inputs = {}
+    def action(self, observation: BigTwoObservation) -> PPOAction:
+        temp = self.transform_obs(observation)
+        transformed = {k: np.array([v]) for k, v in temp.items()}
+        action_mask = generate_action_mask(self.idx_cat_mapping, observation)
 
-        inputs["last_n_cards_played"] = self._to_seq_input(obs.last_n_cards_played)
+        action_tensor, logp_tensor = self.agent.action(
+            obs=transformed, mask=action_mask
+        )
+        action_cat = action_tensor.numpy()
+
+        raw = self.action_cat_mapping[action_cat]
+
+        cards = [c for idx, c in enumerate(observation.your_hands) if raw[idx] == 1]
+
+        return PPOAction(
+            transformed_obs=transformed,
+            raw_action=raw,
+            action_cat=action_cat,
+            action_mask=action_mask,
+            logp=logp_tensor.numpy(),
+            cards=cards,
+        )
+
+    def transform_obs(self, obs: BigTwoObservation):
+        seq_input = np.array(
+            [cards_to_ohe(cards, 5) for cards in obs.last_n_cards_played]
+        )
+
+        if seq_input.size == 0:
+            # if no carsd have been played, we will create one sequence to get the shape
+            # then later on pad it out with zero.
+            seq_input = np.array([cards_to_ohe([], 5)])
+
+        # check row if we need to pad:
+        if seq_input.shape[0] < 5:
+            required_length = 5 - seq_input.shape[0]
+            seq_input = np.pad(seq_input, [(required_length, 0), (0, 0)])
+
+        inputs = {
+            PAST_CARDS_PLAYED: seq_input,
+            CURRENT_OBS: obs_to_ohe(obs),
+        }
 
         return inputs
-
-    def _to_seq_input(self, last_n_cards_played: List[List[Card]]) -> np.ndarray:
-        return np.array([])
 
 
 class EmbeddedInputBot(SimplePPOBot):

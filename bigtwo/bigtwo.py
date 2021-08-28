@@ -266,14 +266,17 @@ class BigTwoObservation:
         your_hands: BigTwoHand,
         current_player: int,
         last_player_played: int,
+        last_n_cards_played=None,
     ):
+        if last_n_cards_played is None:
+            last_n_cards_played = []
         self.num_card_per_player: List[int] = num_card_per_player
         self.last_cards_played: List[Card] = last_cards_played
         self.your_hands: BigTwoHand = your_hands
         self.current_player: int = current_player
         self.last_player_played: int = last_player_played
 
-        self.last_n_cards_played: List[List[Card]] = []
+        self.last_n_cards_played: List[List[Card]] = last_n_cards_played
 
     def can_skip(self) -> bool:
         return (
@@ -752,6 +755,17 @@ class BigTwo:
 
         return self.state[-1][1]
 
+    def get_n_last_cards_played(self, n: int) -> List[List[Card]]:
+        if len(self.state) == 0:
+            return []
+
+        if len(self.state) <= n:
+            return [cards for _, cards in self.state]
+
+        return [
+            self.state[i][1] for i in range(len(self.state), len(self.state) - n, -1)
+        ]
+
     def get_current_player_obs(self) -> BigTwoObservation:
         return self._current_observation(self._get_current_player())
 
@@ -799,6 +813,7 @@ class BigTwo:
             self.player_hands[player_number],
             player_number,
             self.get_player_last_played(),
+            self.get_n_last_cards_played(5),
         )
 
     def _apply_action(self, action) -> Tuple[BigTwoObservation, int, bool]:
