@@ -31,6 +31,7 @@ from gamerunner.ppo_bot import (
     SimplePPOBot,
     GameBuffer,
     PlayerBuffer,
+    PastCardsPlayedBot,
 )
 from playingcards.card import Card
 
@@ -726,6 +727,9 @@ def train_parallel(config: ExperimentConfig):
 
 
 if __name__ == "__main__":
-    config_gpu()
-    train()
+    # config_gpu()
+    # train()
     # train_parallel(ExperimentConfig())
+
+    env = BigTwo()
+    bot = PastCardsPlayedBot(env.reset())
