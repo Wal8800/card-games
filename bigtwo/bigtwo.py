@@ -762,9 +762,8 @@ class BigTwo:
         if len(self.state) <= n:
             return [cards for _, cards in self.state]
 
-        return [
-            self.state[i][1] for i in range(len(self.state), len(self.state) - n, -1)
-        ]
+        max_index = len(self.state) - 1
+        return [self.state[i][1] for i in range(max_index, len(self.state) - n, -1)]
 
     def get_current_player_obs(self) -> BigTwoObservation:
         return self._current_observation(self._get_current_player())
