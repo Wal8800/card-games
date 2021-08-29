@@ -4,6 +4,9 @@ run_random:
 run_ppo:
 	PYTHONPATH=$(shell pwd) python3 gamerunner/ppo_runner.py
 
+run_test:
+	python3 -m unittest discover -p "*_test.py"
+
 lint:
 	pylint ./bigtwo \
 	pylint ./playingcards

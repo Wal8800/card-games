@@ -19,7 +19,26 @@ from gamerunner.ppo_bot import (
 from playingcards.card import Card, Suit, Rank
 
 
+def config_gpu():
+    gpus = tf.config.list_physical_devices("GPU")
+    if gpus:
+        try:
+            # Currently, memory growth needs to be the same across GPUs
+            for gpu in gpus:
+                tf.config.experimental.set_visible_devices(
+                    devices=gpu, device_type="GPU"
+                )
+                tf.config.experimental.set_memory_growth(gpu, True)
+        except RuntimeError as e:
+            # Memory growth must be set before GPUs have been initialized
+            print(e)
+
+
 class TestPPOBot(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        config_gpu()
+
     def test_generate_action_mask_single(self):
         action_cat_mapping, idx_cat_mapping = create_action_cat_mapping()
 
