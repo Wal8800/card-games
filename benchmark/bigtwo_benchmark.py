@@ -16,7 +16,7 @@ from bigtwo.bigtwo import (
     BigTwoHand,
     BigTwo,
 )
-from gamerunner.ppo_bot import SavedPPOBot
+from gamerunner.ppo_bot import SavedSimplePPOBot
 from playingcards.card import Deck, Card
 
 
@@ -77,16 +77,16 @@ def gen_benchmark_hands_list():
 
 def sample_worker(input_queue: Queue, output: Queue):
     bots = {
-        "player_one": SavedPPOBot(
+        "player_one": SavedSimplePPOBot(
             dir_path="../gamerunner/experiments/2021_07_13_21_31_32/bot_save/2021_07_13_21_31_32_5000",
         ),
-        "player_two": SavedPPOBot(
+        "player_two": SavedSimplePPOBot(
             dir_path="../gamerunner/experiments/2021_07_13_21_31_32/bot_save/2021_07_13_21_31_32_1000",
         ),
-        "player_three": SavedPPOBot(
+        "player_three": SavedSimplePPOBot(
             dir_path="../gamerunner/experiments/2021_07_13_21_31_32/bot_save/2021_07_13_21_31_32_10000",
         ),
-        "player_four": SavedPPOBot(
+        "player_four": SavedSimplePPOBot(
             dir_path="../gamerunner/experiments/2021_07_13_21_31_32/bot_save/2021_07_13_21_31_32_15000",
         ),
     }

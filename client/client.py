@@ -7,7 +7,7 @@ import cairosvg
 from PIL import Image, ImageTk
 
 from bigtwo.bigtwo import BigTwo, BigTwoHand
-from gamerunner.ppo_bot import SavedPPOBot, PPOAction
+from gamerunner.ppo_bot import SavedSimplePPOBot, PPOAction
 from gamerunner.ppo_runner import SinglePlayerWrapper
 from playingcards.card import Suit, Rank, Card
 
@@ -137,11 +137,9 @@ class BigTwoClient:
 
         self.single_player_number = 0
 
-        init_obs = game.get_player_obs(self.single_player_number)
-
         # 3 bots
         opponent_bots = [
-            SavedPPOBot(
+            SavedSimplePPOBot(
                 dir_path="../gamerunner/experiments/2021_07_13_21_31_32/bot_save/2021_07_13_21_31_32_19999",
                 # dir_path="../gamerunner/experiments/2021_07_18_12_06_57_serialise/bot_save",
             )
