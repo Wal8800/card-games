@@ -5,10 +5,11 @@ from typing import List
 
 import cairosvg
 from PIL import Image, ImageTk
+import pandas as pd
 
 from bigtwo.bigtwo import BigTwo, BigTwoHand
 from gamerunner.ppo_bot import SavedSimplePPOBot, PPOAction
-from gamerunner.ppo_runner import SinglePlayerWrapper
+from gamerunner.ppo_runner import SinglePlayerWrapper, BotBuilder
 from playingcards.card import Suit, Rank, Card
 
 suit_image_mapping = {
@@ -129,6 +130,29 @@ class PlayedCardFrame:
             cards.grid(row=0, column=i)
 
 
+def build_opponent_bots(paths: List[str]) -> List[any]:
+    """
+    expects each dir_path to be in the format of:
+    ../gamerunner/experiments/2021_07_13_21_31_32/bot_save/2021_07_13_21_31_32_19999
+
+    :param paths:
+    :return:
+    """
+    result = []
+    for dir_path in paths:
+        index = dir_path.index("/bot_save")
+
+        config = pd.read_csv(f"{dir_path[:index]}/config.csv")
+
+        bot_type = config.loc[0]["bot_type"]
+
+        bot = BotBuilder.create_testing_bot_by_str(bot_type, dir_path)
+
+        result.append(bot)
+
+    return result
+
+
 class BigTwoClient:
     CARD_BACK = "BACK"
 
@@ -138,13 +162,12 @@ class BigTwoClient:
         self.single_player_number = 0
 
         # 3 bots
-        opponent_bots = [
-            SavedSimplePPOBot(
-                dir_path="../gamerunner/experiments/2021_07_13_21_31_32/bot_save/2021_07_13_21_31_32_19999",
-                # dir_path="../gamerunner/experiments/2021_07_18_12_06_57_serialise/bot_save",
-            )
-            for _ in range(3)
-        ]
+        opponent_bots = build_opponent_bots(
+            [
+                "../gamerunner/experiments/2021_07_13_21_31_32/bot_save/2021_07_13_21_31_32_19999"
+                for _ in range(3)
+            ]
+        )
 
         self.wrapped_env = SinglePlayerWrapper(
             env=game,
