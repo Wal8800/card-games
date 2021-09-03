@@ -573,7 +573,7 @@ class SimplePPOBot(BigTwoBot):
         return obs_to_ohe(obs)
 
 
-class SavedPPOBot(BigTwoBot):
+class SavedSimplePPOBot(BigTwoBot):
     def __init__(self, dir_path: str):
         self.action_cat_mapping, self.idx_cat_mapping = create_action_cat_mapping()
         self.agent = self._create_agent(dir_path)
