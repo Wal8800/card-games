@@ -23,16 +23,12 @@ import numpy as np
 import pandas as pd
 import psutil
 import tensorflow as tf
+import yaml
 from pympler import summary, muppy
 
 from algorithm.agent import PPOBufferInterface
 from bigtwo.bigtwo import BigTwo, BigTwoObservation, BigTwoHand
-from gamerunner.ppo_bot import (
-    SimplePPOBot,
-    GameBuffer,
-    PlayerBuffer,
-    PastCardsPlayedBot,
-)
+from gamerunner.ppo_bot import SimplePPOBot, GameBuffer, PlayerBuffer
 from playingcards.card import Card
 
 FORMATTER = logging.Formatter("%(asctime)s — %(name)s — %(levelname)s — %(message)s")
@@ -517,8 +513,9 @@ class ExperimentLogger:
         data["bot_class_name"] = config.bot_class.__name__
         # As we are using all scalar values, we need to pass an index
         # wrapping the dict in a list means the index of the values is 0
-        config_df = pd.DataFrame([data])
-        config_df.to_csv(f"{self.dir_path}/config.csv", index=False)
+
+        with open(f"{self.dir_path}/config.yaml", "w") as yml_file:
+            yaml.dump(data, yml_file)
 
     def flush_metric(self, episode: int, metric: SampleMetric):
         self._flush_starting_hands(episode, metric)
@@ -728,5 +725,5 @@ def train_parallel(config: ExperimentConfig):
 
 if __name__ == "__main__":
     config_gpu()
-    train()
+    # train()
     # train_parallel(ExperimentConfig())
