@@ -33,7 +33,6 @@ from gamerunner.ppo_bot import (
     SimplePPOBot,
     GameBuffer,
     PlayerBuffer,
-    PastCardsPlayedBot,
     SavedSimplePPOBot,
 )
 from playingcards.card import Card
@@ -123,6 +122,7 @@ class ExperimentConfig:
     opponent_buf_limit = 10
     opponent_update_freq = 100
 
+    bot_type = BotType.SIMPLE_PPO_BOT
     bot_class = SimplePPOBot
     game_buf_class = GameBuffer
     player_buf_class = PlayerBuffer
@@ -380,11 +380,11 @@ def build_opponent_bots(
     opponent_bots = []
     for _ in range(3):
         if len(opponent_weights) > 0:
-            opponent = config.bot_class(obs)
+            opponent = BotBuilder.create_training_bot(config.bot_type, obs)
             pw, vw = random.choice(opponent_weights)
             opponent.set_weights(pw, vw)
         else:
-            opponent = config.bot_class(obs)
+            opponent = BotBuilder.create_training_bot(config.bot_type, obs)
             opponent.set_weights(policy_weight, value_weight)
 
         opponent_bots.append(opponent)
@@ -402,7 +402,7 @@ def collect_data_from_env_self_play(
 
     # player 0 is the one with the latest weight and the one we are training
     policy_weight, value_weight = bot_weights
-    bot = config.bot_class(init_obs)
+    bot = BotBuilder.create_training_bot(config.bot_type, init_obs)
     bot.set_weights(policy_weight, value_weight)
 
     bot_ep_rews = []
@@ -548,7 +548,7 @@ class ExperimentLogger:
 
     def flush_config(self, config: ExperimentConfig):
         data = asdict(config)
-        data["bot_type"] = config.bot_class.__name__
+        data["bot_type"] = config.bot_type.value
         # As we are using all scalar values, we need to pass an index
         # wrapping the dict in a list means the index of the values is 0
 
@@ -618,12 +618,12 @@ def train():
     config.buffer_size = 4000
     config.mini_batch_size = 1028
 
-    new_dir = f"{get_current_dt_format()}_serialise"
+    new_dir = f"{get_current_dt_format()}_test_run"
     experiment_logger = ExperimentLogger(new_dir)
     experiment_logger.flush_config(config)
 
     previous_bots = []
-    bot = config.bot_class(env.reset(), lr=config.lr)
+    bot = BotBuilder.create_training_bot(config.bot_type, env.reset(), lr=config.lr)
     for episode in range(config.epoch):
         sample_start_time = time.time()
 
@@ -705,7 +705,7 @@ def train_parallel(config: ExperimentConfig):
 
         train_logger = get_logger("train_ppo", log_level=logging.INFO)
         env = BigTwo()
-        bot = config.bot_class(env.reset(), lr=config.lr)
+        bot = BotBuilder.create_training_bot(config.bot_type, env.reset(), lr=config.lr)
 
         for episode in range(config.epoch):
             sample_start_time = time.time()
@@ -763,10 +763,5 @@ def train_parallel(config: ExperimentConfig):
 
 if __name__ == "__main__":
     config_gpu()
-<<<<<<< HEAD
-=======
+    train()
 
-    BotBuilder.create_testing_bot(BotType.SIMPLE_PPO_BOT)
->>>>>>> Client able to create bot without specifying the class
-    # train()
-    # train_parallel(ExperimentConfig())
