@@ -18,7 +18,7 @@ from datetime import datetime
 from enum import Enum
 from multiprocessing import Queue, Process
 from pstats import SortKey
-from typing import Dict, List, Tuple, Any
+from typing import Dict, List, Tuple, Any, Mapping
 
 import numpy as np
 import pandas as pd
@@ -33,6 +33,10 @@ from gamerunner.ppo_bot import (
     GameBuffer,
     PlayerBuffer,
     SavedSimplePPOBot,
+    MultiInputGameBuffer,
+    MultiInputPlayerBuffer,
+    PastCardsPlayedBot,
+    SavedPastCardsPlayedBot,
 )
 from playingcards.card import Card
 
@@ -91,12 +95,18 @@ class BotBuilder:
         if bot_type == BotType.SIMPLE_PPO_BOT:
             return SimplePPOBot(*args, **kwargs)
 
+        if bot_type == BotType.LSTM_PPO_BOT:
+            return PastCardsPlayedBot(*args, **kwargs)
+
         raise ValueError("Unexpected bot type")
 
     @staticmethod
     def create_testing_bot(bot_type: BotType, *args, **kwargs):
         if bot_type == BotType.SIMPLE_PPO_BOT:
             return SavedSimplePPOBot(*args, **kwargs)
+
+        if bot_type == BotType.LSTM_PPO_BOT:
+            return SavedPastCardsPlayedBot(*args, **kwargs)
 
         raise ValueError("Unexpected bot type")
 
@@ -105,6 +115,26 @@ class BotBuilder:
         bot_type = bot_type_from_str(value)
 
         return BotBuilder.create_testing_bot(bot_type, *args, **kwargs)
+
+
+def get_game_buf(bot_type: BotType) -> PPOBufferInterface:
+    if bot_type == BotType.SIMPLE_PPO_BOT:
+        return GameBuffer()
+
+    if bot_type == BotType.LSTM_PPO_BOT:
+        return MultiInputGameBuffer()
+
+    raise ValueError("unexpected bot type")
+
+
+def get_player_buf(bot_type: BotType):
+    if bot_type == BotType.SIMPLE_PPO_BOT:
+        return PlayerBuffer()
+
+    if bot_type == BotType.LSTM_PPO_BOT:
+        return MultiInputPlayerBuffer()
+
+    raise ValueError("unexpected bot type")
 
 
 @dataclass
@@ -122,9 +152,6 @@ class ExperimentConfig:
     opponent_update_freq = 100
 
     bot_type = BotType.SIMPLE_PPO_BOT
-    bot_class = SimplePPOBot
-    game_buf_class = GameBuffer
-    player_buf_class = PlayerBuffer
 
 
 class SampleMetric:
@@ -394,7 +421,7 @@ def build_opponent_bots(
 def collect_data_from_env_self_play(
     bot_weights, opponent_weights: List[Any], config: ExperimentConfig, buffer_size=4000
 ) -> Tuple[PPOBufferInterface, SampleMetric]:
-    buf = config.game_buf_class()
+    buf = get_game_buf(config.bot_type)
 
     env = BigTwo()
     init_obs = env.reset()
@@ -405,7 +432,7 @@ def collect_data_from_env_self_play(
     bot.set_weights(policy_weight, value_weight)
 
     bot_ep_rews = []
-    bot_buf = config.player_buf_class()
+    bot_buf = get_player_buf(config.bot_type)
 
     opponent_bots = build_opponent_bots(init_obs, bot_weights, opponent_weights, config)
 
@@ -447,7 +474,12 @@ def collect_data_from_env_self_play(
             last_val = 0
             if not done and epoch_ended:
                 transformed_obs = bot.transform_obs(obs)
-                transformed_obs = np.array([transformed_obs])
+                if isinstance(transformed_obs, Mapping):
+                    transformed_obs = {
+                        k: np.array([v]) for k, v in transformed_obs.items()
+                    }
+                else:
+                    transformed_obs = np.array([transformed_obs])
                 last_val = bot.predict_value(transformed_obs)
 
             bot_buf.finish_path(estimated_values.numpy().flatten(), last_val)
@@ -460,7 +492,7 @@ def collect_data_from_env_self_play(
 
             # reset game
             obs = wrapped_env.reset_and_start()
-            bot_buf = config.player_buf_class()
+            bot_buf = get_player_buf(config.bot_type)
             bot_ep_rews = []
 
         if epoch_ended:
@@ -615,6 +647,7 @@ def train():
     config.opponent_update_freq = 10
     config.buffer_size = 4000
     config.mini_batch_size = 1028
+    config.bot_type = BotType.LSTM_PPO_BOT
 
     new_dir = f"{get_current_dt_format()}_test_run"
     experiment_logger = ExperimentLogger(new_dir)
@@ -656,7 +689,7 @@ def train():
 
         experiment_logger.flush_metric(episode, m)
 
-        if episode % 2 == 0:
+        if episode % 2 == 0 and episode > 0:
             save_bot_dir_path = f"./experiments/{new_dir}/bot_save"
             os.makedirs(save_bot_dir_path, exist_ok=True)
             bot.agent.save(save_bot_dir_path)

@@ -89,7 +89,7 @@ def cards_to_ohe(cards: List[Card], padded_length: int) -> List[int]:
     return data
 
 
-def obs_to_ohe(obs: BigTwoObservation) -> np.ndarray:
+def obs_to_ohe(obs: BigTwoObservation, include_last_cards_played=True) -> np.ndarray:
     data = []
     data += obs.num_card_per_player
 
@@ -111,7 +111,8 @@ def obs_to_ohe(obs: BigTwoObservation) -> np.ndarray:
     # cards length
     data.append(len(obs.last_cards_played))
 
-    data += cards_to_ohe(obs.last_cards_played, 5)
+    if include_last_cards_played:
+        data += cards_to_ohe(obs.last_cards_played, 5)
     data += cards_to_ohe(obs.your_hands.cards, 13)
 
     return np.array(data)
@@ -354,7 +355,9 @@ class MultiInputPlayerBuffer:
         if self.is_empty():
             self.obs_buf = obs
         else:
-            self.obs_buf = {k: v + obs[k] for k, v in self.obs_buf.items()}
+            self.obs_buf = {
+                k: np.append(v, obs[k], axis=0) for k, v in self.obs_buf.items()
+            }
 
         self.act_buf.append(act)
         self.rew_buf.append(rew)
@@ -444,7 +447,10 @@ class MultiInputGameBuffer(PPOBufferInterface):
         if len(self.obs_buf) == 0:
             self.obs_buf = pbuf.obs_buf
         else:
-            self.obs_buf = {k: v + pbuf.obs_buf[k] for k, v in self.obs_buf.items()}
+            self.obs_buf = {
+                k: np.append(v, pbuf.obs_buf[k], axis=0)
+                for k, v in self.obs_buf.items()
+            }
 
         self.act_buf = set_or_add(self.act_buf, pbuf.act_buf)
         self.adv_buf = set_or_add(self.adv_buf, pbuf.adv_buf)
@@ -464,7 +470,9 @@ class MultiInputGameBuffer(PPOBufferInterface):
 
     def __add__(self, other):
         result_buf = MultiInputGameBuffer()
-        result_buf.obs_buf = {k: v + other.obs_buf[k] for k, v in self.obs_buf.items()}
+        result_buf.obs_buf = {
+            k: np.append(v, other.obs_buf[k], axis=0) for k, v in self.obs_buf.items()
+        }
         result_buf.act_buf = np.append(self.act_buf, other.act_buf, axis=0)
         result_buf.adv_buf = np.append(self.adv_buf, other.adv_buf, axis=0)
         result_buf.rew_buf = np.append(self.rew_buf, other.rew_buf, axis=0)
@@ -610,6 +618,53 @@ class SavedSimplePPOBot(BigTwoBot):
         )
 
 
+class SavedPastCardsPlayedBot(SavedSimplePPOBot):
+    def action(self, observation: BigTwoObservation) -> PPOAction:
+        temp = self.transform_obs(observation)
+        transformed = {k: np.array([v]) for k, v in temp.items()}
+        action_mask = generate_action_mask(self.idx_cat_mapping, observation)
+
+        action_tensor, logp_tensor = self.agent.action(
+            obs=transformed, mask=action_mask
+        )
+        action_cat = action_tensor.numpy()
+
+        raw = self.action_cat_mapping[action_cat]
+
+        cards = [c for idx, c in enumerate(observation.your_hands) if raw[idx] == 1]
+
+        return PPOAction(
+            transformed_obs=transformed,
+            raw_action=raw,
+            action_cat=action_cat,
+            action_mask=action_mask,
+            logp=logp_tensor.numpy(),
+            cards=cards,
+        )
+
+    def transform_obs(self, obs: BigTwoObservation):
+        seq_input = np.array(
+            [cards_to_ohe(cards, 5) for cards in obs.last_n_cards_played]
+        )
+
+        if seq_input.size == 0:
+            # if no carsd have been played, we will create one sequence to get the shape
+            # then later on pad it out with zero.
+            seq_input = np.array([cards_to_ohe([], 5)])
+
+        # check row if we need to pad:
+        if seq_input.shape[0] < 5:
+            required_length = 5 - seq_input.shape[0]
+            seq_input = np.pad(seq_input, [(required_length, 0), (0, 0)])
+
+        inputs = {
+            PAST_CARDS_PLAYED: seq_input,
+            CURRENT_OBS: obs_to_ohe(obs, include_last_cards_played=False),
+        }
+
+        return inputs
+
+
 def create_embedded_input_policy(n_action: int) -> keras.Model:
     # 52 cards + 1 empty
     card_dim = 53
@@ -743,7 +798,7 @@ class PastCardsPlayedBot(SimplePPOBot):
 
         inputs = {
             PAST_CARDS_PLAYED: seq_input,
-            CURRENT_OBS: obs_to_ohe(obs),
+            CURRENT_OBS: obs_to_ohe(obs, include_last_cards_played=False),
         }
 
         return inputs
