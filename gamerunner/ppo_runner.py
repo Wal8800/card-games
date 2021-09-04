@@ -647,7 +647,7 @@ def train():
     config.opponent_update_freq = 10
     config.buffer_size = 4000
     config.mini_batch_size = 1028
-    config.bot_type = BotType.LSTM_PPO_BOT
+    config.bot_type = BotType.SIMPLE_PPO_BOT
 
     new_dir = f"{get_current_dt_format()}_test_run"
     experiment_logger = ExperimentLogger(new_dir)
