@@ -164,7 +164,8 @@ class BigTwoClient:
         # 3 bots
         opponent_bots = build_opponent_bots(
             [
-                "../gamerunner/experiments/2021_07_13_21_31_32/bot_save/2021_07_13_21_31_32_19999"
+                # "../gamerunner/experiments/2021_07_13_21_31_32/bot_save/2021_07_13_21_31_32_19999"
+                "../gamerunner/experiments/2021_09_05_09_22_21_test_run/bot_save"
                 for _ in range(3)
             ]
         )
