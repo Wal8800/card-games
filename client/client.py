@@ -9,7 +9,7 @@ import pandas as pd
 
 from bigtwo.bigtwo import BigTwo, BigTwoHand
 from gamerunner.ppo_bot import SavedSimplePPOBot, PPOAction
-from gamerunner.ppo_runner import SinglePlayerWrapper, BotBuilder
+from gamerunner.ppo_runner import SinglePlayerWrapper, BotBuilder, build_bot
 from playingcards.card import Suit, Rank, Card
 
 suit_image_mapping = {
@@ -138,19 +138,7 @@ def build_opponent_bots(paths: List[str]) -> List[any]:
     :param paths:
     :return:
     """
-    result = []
-    for dir_path in paths:
-        index = dir_path.index("/bot_save")
-
-        config = pd.read_csv(f"{dir_path[:index]}/config.csv")
-
-        bot_type = config.loc[0]["bot_type"]
-
-        bot = BotBuilder.create_testing_bot_by_str(bot_type, dir_path)
-
-        result.append(bot)
-
-    return result
+    return [build_bot(dir_path) for dir_path in paths]
 
 
 class BigTwoClient:
