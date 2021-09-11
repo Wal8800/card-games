@@ -118,6 +118,16 @@ class BotBuilder:
         return BotBuilder.create_testing_bot(bot_type, *args, **kwargs)
 
 
+def build_bot(dir_path: str):
+    index = dir_path.index("/bot_save")
+
+    config = pd.read_csv(f"{dir_path[:index]}/config.csv")
+
+    bot_type = config.loc[0]["bot_type"]
+
+    return BotBuilder.create_testing_bot_by_str(bot_type, dir_path)
+
+
 def get_game_buf(bot_type: BotType) -> PPOBufferInterface:
     if bot_type == BotType.SIMPLE_PPO_BOT:
         return GameBuffer()
@@ -140,7 +150,7 @@ def get_player_buf(bot_type: BotType):
 
 @dataclass
 class ExperimentConfig:
-    epoch: int = 20000
+    epoch: int = 100
     lr: float = 0.0001
     buffer_size: int = 4000
     mini_batch_size: int = 512
@@ -151,8 +161,9 @@ class ExperimentConfig:
 
     opponent_buf_limit = 10
     opponent_update_freq = 100
+    bot_save_freq = 100
 
-    bot_type = BotType.SIMPLE_PPO_BOT
+    bot_type = BotType.LSTM_PPO_BOT
 
 
 class SampleMetric:
@@ -570,13 +581,15 @@ def print_snapshot() -> tracemalloc.Snapshot:
 
 
 class ExperimentLogger:
-    def __init__(self, dir_path: str):
+    def __init__(self, dir_path: str, game_data_flush_freq=1):
         self.dir_path = f"./experiments/{dir_path}"
         os.makedirs(self.dir_path)
 
         self.train_summary_writer = tf.summary.create_file_writer(
             f"{self.dir_path}/tensorboard"
         )
+
+        self.game_data_flush_freq = game_data_flush_freq
 
     def flush_config(self, config: ExperimentConfig):
         data = asdict(config)
@@ -588,8 +601,9 @@ class ExperimentLogger:
             yaml.dump(data, yml_file)
 
     def flush_metric(self, episode: int, metric: SampleMetric):
-        self._flush_starting_hands(episode, metric)
-        self._flush_action_history(episode, metric)
+        if episode % self.game_data_flush_freq == 0:
+            self._flush_starting_hands(episode, metric)
+            self._flush_action_history(episode, metric)
         self._flush_tensorboard(episode, metric)
 
     def _flush_action_history(self, episode: int, metric: SampleMetric):
@@ -649,7 +663,7 @@ def train():
     config.opponent_update_freq = 10
     config.buffer_size = 4000
     config.mini_batch_size = 1028
-    config.bot_type = BotType.SIMPLE_PPO_BOT
+    config.bot_type = BotType.LSTM_PPO_BOT
 
     new_dir = f"{get_current_dt_format()}_test_run"
     experiment_logger = ExperimentLogger(new_dir)
@@ -657,6 +671,7 @@ def train():
 
     previous_bots = []
     bot = BotBuilder.create_training_bot(config.bot_type, env.reset(), lr=config.lr)
+
     for episode in range(config.epoch):
         sample_start_time = time.time()
 
@@ -782,8 +797,10 @@ def train_parallel(config: ExperimentConfig):
 
             experiment_logger.flush_metric(episode, m)
 
-            if episode % 100 == 0 or episode == config.epoch - 1:
-                save_bot_dir_path = f"save/{new_dir}_{episode}"
+            if episode % config.bot_save_freq == 0 or episode == config.epoch - 1:
+                save_bot_dir_path = (
+                    f"./experiments/{new_dir}/bot_save/{new_dir}_{episode}"
+                )
                 os.makedirs(save_bot_dir_path, exist_ok=True)
                 bot.agent.save(save_bot_dir_path)
 
@@ -796,5 +813,6 @@ def train_parallel(config: ExperimentConfig):
 
 if __name__ == "__main__":
     config_gpu()
-    train()
-
+    tracemalloc.start()
+    # train()
+    train_parallel(ExperimentConfig())
