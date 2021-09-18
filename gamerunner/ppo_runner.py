@@ -150,7 +150,7 @@ def get_player_buf(bot_type: BotType):
 
 @dataclass
 class ExperimentConfig:
-    epoch: int = 100
+    epoch: int = 10000
     lr: float = 0.0001
     buffer_size: int = 4000
     mini_batch_size: int = 512
@@ -162,6 +162,7 @@ class ExperimentConfig:
     opponent_buf_limit = 10
     opponent_update_freq = 100
     bot_save_freq = 100
+    game_data_flush_freq = 100
 
     bot_type = BotType.LSTM_PPO_BOT
 
@@ -748,7 +749,9 @@ def train_parallel(config: ExperimentConfig):
 
     try:
         new_dir = get_current_dt_format()
-        experiment_logger = ExperimentLogger(new_dir)
+        experiment_logger = ExperimentLogger(
+            new_dir, game_data_flush_freq=config.game_data_flush_freq
+        )
         experiment_logger.flush_config(config)
 
         train_logger = get_logger("train_ppo", log_level=logging.INFO)
@@ -813,6 +816,5 @@ def train_parallel(config: ExperimentConfig):
 
 if __name__ == "__main__":
     config_gpu()
-    tracemalloc.start()
     # train()
     train_parallel(ExperimentConfig())
