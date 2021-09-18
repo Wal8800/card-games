@@ -79,16 +79,16 @@ def gen_benchmark_hands_list():
 def sample_worker(input_queue: Queue, output: Queue):
     bots = {
         "player_one": build_bot(
-            "../gamerunner/experiments/2021_09_12_09_31_38/bot_save/2021_09_12_09_31_38_99",
+            dir_path="../gamerunner/experiments/2021_07_13_21_31_32/bot_save/2021_07_13_21_31_32_10000",
         ),
         "player_two": build_bot(
-            dir_path="../gamerunner/experiments/2021_09_12_09_31_38/bot_save/2021_09_12_09_31_38_99",
+            dir_path="../gamerunner/experiments/2021_09_12_22_24_49/bot_save/2021_09_12_22_24_49_9999",
         ),
         "player_three": build_bot(
-            dir_path="../gamerunner/experiments/2021_09_12_09_31_38/bot_save/2021_09_12_09_31_38_99",
+            dir_path="../gamerunner/experiments/2021_07_13_21_31_32/bot_save/2021_07_13_21_31_32_10000",
         ),
         "player_four": build_bot(
-            dir_path="../gamerunner/experiments/2021_07_13_21_31_32/bot_save/2021_07_13_21_31_32_100",
+            dir_path="../gamerunner/experiments/2021_09_12_22_24_49/bot_save/2021_09_12_22_24_49_9999",
         ),
     }
 
