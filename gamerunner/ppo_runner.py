@@ -160,12 +160,12 @@ class ExperimentConfig:
 
     clip_ratio: float = 0.3
 
-    opponent_buf_limit = 10
-    opponent_update_freq = 100
-    bot_save_freq = 100
-    game_data_flush_freq = 100
+    opponent_buf_limit: int = 10
+    opponent_update_freq: int = 100
+    bot_save_freq: int = 100
+    game_data_flush_freq: int = 100
 
-    bot_type = BotType.LSTM_PPO_BOT
+    bot_type: BotType = BotType.LSTM_PPO_BOT
 
 
 class SampleMetric:
@@ -582,6 +582,18 @@ def print_snapshot() -> tracemalloc.Snapshot:
     return snapshot
 
 
+def read_config_from_file(filepath: str) -> ExperimentConfig:
+    with open(filepath) as file:
+        # The FullLoader parameter handles the conversion from YAML
+        # scalar values to Python the dictionary format
+        data = yaml.load(file, Loader=yaml.FullLoader)
+
+    if "bot_type" in data:
+        data["bot_type"] = bot_type_from_str(data["bot_type"])
+
+    return ExperimentConfig(**data)
+
+
 class ExperimentLogger:
     def __init__(self, dir_path: str, game_data_flush_freq=1):
         self.dir_path = f"./experiments/{dir_path}"
@@ -659,14 +671,7 @@ def train():
     env = BigTwo()
 
     # override config for serialise training
-    config = ExperimentConfig()
-    config.epoch = 10
-    config.lr = 0.0001
-    config.opponent_update_freq = 10
-    config.buffer_size = 4000
-    config.mini_batch_size = 1028
-    config.bot_type = BotType.LSTM_PPO_BOT
-
+    config = read_config_from_file("./config/train.yaml")
     new_dir = f"{get_current_dt_format()}_test_run"
     experiment_logger = ExperimentLogger(new_dir)
     experiment_logger.flush_config(config)
@@ -731,7 +736,8 @@ def merge_result(
     return result_buf, result_metric
 
 
-def train_parallel(config: ExperimentConfig):
+def train_parallel():
+    config = read_config_from_file("./config/train_parallel.yaml")
     mp.set_start_method("spawn")
 
     os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"  # FATAL
@@ -817,5 +823,5 @@ def train_parallel(config: ExperimentConfig):
 
 if __name__ == "__main__":
     config_gpu()
-    # train()
-    train_parallel(ExperimentConfig())
+    train()
+    # train_parallel()
