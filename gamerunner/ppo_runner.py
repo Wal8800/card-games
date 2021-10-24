@@ -15,9 +15,10 @@ import time
 import tracemalloc
 from dataclasses import dataclass, asdict
 from datetime import datetime
+from enum import Enum
 from multiprocessing import Queue, Process
 from pstats import SortKey
-from typing import Dict, List, Tuple, Any
+from typing import Dict, List, Tuple, Any, Mapping
 
 import numpy as np
 import pandas as pd
@@ -28,7 +29,17 @@ from pympler import summary, muppy
 
 from algorithm.agent import PPOBufferInterface
 from bigtwo.bigtwo import BigTwo, BigTwoObservation, BigTwoHand
-from gamerunner.ppo_bot import SimplePPOBot, GameBuffer, PlayerBuffer
+from gamerunner.ppo_bot import (
+    SimplePPOBot,
+    GameBuffer,
+    PlayerBuffer,
+    SavedSimplePPOBot,
+    MultiInputGameBuffer,
+    MultiInputPlayerBuffer,
+    PastCardsPlayedBot,
+    SavedPastCardsPlayedBot,
+)
+
 from playingcards.card import Card
 
 FORMATTER = logging.Formatter("%(asctime)s — %(name)s — %(levelname)s — %(message)s")
@@ -67,9 +78,80 @@ def create_player_rew_buf(num_of_player=4) -> Dict[int, List[int]]:
     return {i: [] for i in range(num_of_player)}
 
 
+class BotType(Enum):
+    SIMPLE_PPO_BOT = "SimplePPOBot"
+    LSTM_PPO_BOT = "LSTMPPOBot"
+
+
+def bot_type_from_str(value: str) -> BotType:
+    for enum_value in BotType:
+        if enum_value.value == value:
+            return enum_value
+
+    raise ValueError(f"Input value ({value}) doesn't match with any bot type enum")
+
+
+class BotBuilder:
+    @staticmethod
+    def create_training_bot(bot_type: BotType, *args, **kwargs):
+        if bot_type == BotType.SIMPLE_PPO_BOT:
+            return SimplePPOBot(*args, **kwargs)
+
+        if bot_type == BotType.LSTM_PPO_BOT:
+            return PastCardsPlayedBot(*args, **kwargs)
+
+        raise ValueError("Unexpected bot type")
+
+    @staticmethod
+    def create_testing_bot(bot_type: BotType, *args, **kwargs):
+        if bot_type == BotType.SIMPLE_PPO_BOT:
+            return SavedSimplePPOBot(*args, **kwargs)
+
+        if bot_type == BotType.LSTM_PPO_BOT:
+            return SavedPastCardsPlayedBot(*args, **kwargs)
+
+        raise ValueError("Unexpected bot type")
+
+    @staticmethod
+    def create_testing_bot_by_str(value: str, *args, **kwargs):
+        bot_type = bot_type_from_str(value)
+
+        return BotBuilder.create_testing_bot(bot_type, *args, **kwargs)
+
+
+def build_bot(dir_path: str):
+    index = dir_path.index("/bot_save")
+
+    config = pd.read_csv(f"{dir_path[:index]}/config.csv")
+
+    bot_type = config.loc[0]["bot_type"]
+
+    return BotBuilder.create_testing_bot_by_str(bot_type, dir_path)
+
+
+def get_game_buf(bot_type: BotType) -> PPOBufferInterface:
+    if bot_type == BotType.SIMPLE_PPO_BOT:
+        return GameBuffer()
+
+    if bot_type == BotType.LSTM_PPO_BOT:
+        return MultiInputGameBuffer()
+
+    raise ValueError("unexpected bot type")
+
+
+def get_player_buf(bot_type: BotType):
+    if bot_type == BotType.SIMPLE_PPO_BOT:
+        return PlayerBuffer()
+
+    if bot_type == BotType.LSTM_PPO_BOT:
+        return MultiInputPlayerBuffer()
+
+    raise ValueError("unexpected bot type")
+
+
 @dataclass
 class ExperimentConfig:
-    epoch: int = 20000
+    epoch: int = 10000
     lr: float = 0.0001
     buffer_size: int = 4000
     mini_batch_size: int = 512
@@ -80,14 +162,10 @@ class ExperimentConfig:
 
     opponent_buf_limit = 10
     opponent_update_freq = 100
+    bot_save_freq = 100
+    game_data_flush_freq = 100
 
-    bot_class = SimplePPOBot
-    game_buf_class = GameBuffer
-    player_buf_class = PlayerBuffer
-
-    # bot_class = EmbeddedInputBot
-    # game_buf_class = MultiInputGameBuffer
-    # player_buf_class = MultiInputPlayerBuffer
+    bot_type = BotType.LSTM_PPO_BOT
 
 
 class SampleMetric:
@@ -342,11 +420,11 @@ def build_opponent_bots(
     opponent_bots = []
     for _ in range(3):
         if len(opponent_weights) > 0:
-            opponent = config.bot_class(obs)
+            opponent = BotBuilder.create_training_bot(config.bot_type, obs)
             pw, vw = random.choice(opponent_weights)
             opponent.set_weights(pw, vw)
         else:
-            opponent = config.bot_class(obs)
+            opponent = BotBuilder.create_training_bot(config.bot_type, obs)
             opponent.set_weights(policy_weight, value_weight)
 
         opponent_bots.append(opponent)
@@ -357,18 +435,18 @@ def build_opponent_bots(
 def collect_data_from_env_self_play(
     bot_weights, opponent_weights: List[Any], config: ExperimentConfig, buffer_size=4000
 ) -> Tuple[PPOBufferInterface, SampleMetric]:
-    buf = config.game_buf_class()
+    buf = get_game_buf(config.bot_type)
 
     env = BigTwo()
     init_obs = env.reset()
 
     # player 0 is the one with the latest weight and the one we are training
     policy_weight, value_weight = bot_weights
-    bot = config.bot_class(init_obs)
+    bot = BotBuilder.create_training_bot(config.bot_type, init_obs)
     bot.set_weights(policy_weight, value_weight)
 
     bot_ep_rews = []
-    bot_buf = config.player_buf_class()
+    bot_buf = get_player_buf(config.bot_type)
 
     opponent_bots = build_opponent_bots(init_obs, bot_weights, opponent_weights, config)
 
@@ -410,7 +488,12 @@ def collect_data_from_env_self_play(
             last_val = 0
             if not done and epoch_ended:
                 transformed_obs = bot.transform_obs(obs)
-                transformed_obs = np.array([transformed_obs])
+                if isinstance(transformed_obs, Mapping):
+                    transformed_obs = {
+                        k: np.array([v]) for k, v in transformed_obs.items()
+                    }
+                else:
+                    transformed_obs = np.array([transformed_obs])
                 last_val = bot.predict_value(transformed_obs)
 
             bot_buf.finish_path(estimated_values.numpy().flatten(), last_val)
@@ -423,7 +506,7 @@ def collect_data_from_env_self_play(
 
             # reset game
             obs = wrapped_env.reset_and_start()
-            bot_buf = config.player_buf_class()
+            bot_buf = get_player_buf(config.bot_type)
             bot_ep_rews = []
 
         if epoch_ended:
@@ -500,7 +583,7 @@ def print_snapshot() -> tracemalloc.Snapshot:
 
 
 class ExperimentLogger:
-    def __init__(self, dir_path: str):
+    def __init__(self, dir_path: str, game_data_flush_freq=1):
         self.dir_path = f"./experiments/{dir_path}"
         os.makedirs(self.dir_path)
 
@@ -508,9 +591,11 @@ class ExperimentLogger:
             f"{self.dir_path}/tensorboard"
         )
 
+        self.game_data_flush_freq = game_data_flush_freq
+
     def flush_config(self, config: ExperimentConfig):
         data = asdict(config)
-        data["bot_class_name"] = config.bot_class.__name__
+        data["bot_type"] = config.bot_type.value
         # As we are using all scalar values, we need to pass an index
         # wrapping the dict in a list means the index of the values is 0
 
@@ -518,8 +603,9 @@ class ExperimentLogger:
             yaml.dump(data, yml_file)
 
     def flush_metric(self, episode: int, metric: SampleMetric):
-        self._flush_starting_hands(episode, metric)
-        self._flush_action_history(episode, metric)
+        if episode % self.game_data_flush_freq == 0:
+            self._flush_starting_hands(episode, metric)
+            self._flush_action_history(episode, metric)
         self._flush_tensorboard(episode, metric)
 
     def _flush_action_history(self, episode: int, metric: SampleMetric):
@@ -579,13 +665,15 @@ def train():
     config.opponent_update_freq = 10
     config.buffer_size = 4000
     config.mini_batch_size = 1028
+    config.bot_type = BotType.LSTM_PPO_BOT
 
-    new_dir = f"{get_current_dt_format()}_serialise"
+    new_dir = f"{get_current_dt_format()}_test_run"
     experiment_logger = ExperimentLogger(new_dir)
     experiment_logger.flush_config(config)
 
     previous_bots = []
-    bot = config.bot_class(env.reset(), lr=config.lr)
+    bot = BotBuilder.create_training_bot(config.bot_type, env.reset(), lr=config.lr)
+
     for episode in range(config.epoch):
         sample_start_time = time.time()
 
@@ -620,7 +708,7 @@ def train():
 
         experiment_logger.flush_metric(episode, m)
 
-        if episode % 2 == 0:
+        if episode % 2 == 0 and episode > 0:
             save_bot_dir_path = f"./experiments/{new_dir}/bot_save"
             os.makedirs(save_bot_dir_path, exist_ok=True)
             bot.agent.save(save_bot_dir_path)
@@ -662,12 +750,14 @@ def train_parallel(config: ExperimentConfig):
 
     try:
         new_dir = get_current_dt_format()
-        experiment_logger = ExperimentLogger(new_dir)
+        experiment_logger = ExperimentLogger(
+            new_dir, game_data_flush_freq=config.game_data_flush_freq
+        )
         experiment_logger.flush_config(config)
 
         train_logger = get_logger("train_ppo", log_level=logging.INFO)
         env = BigTwo()
-        bot = config.bot_class(env.reset(), lr=config.lr)
+        bot = BotBuilder.create_training_bot(config.bot_type, env.reset(), lr=config.lr)
 
         for episode in range(config.epoch):
             sample_start_time = time.time()
@@ -711,8 +801,10 @@ def train_parallel(config: ExperimentConfig):
 
             experiment_logger.flush_metric(episode, m)
 
-            if episode % 100 == 0 or episode == config.epoch - 1:
-                save_bot_dir_path = f"save/{new_dir}_{episode}"
+            if episode % config.bot_save_freq == 0 or episode == config.epoch - 1:
+                save_bot_dir_path = (
+                    f"./experiments/{new_dir}/bot_save/{new_dir}_{episode}"
+                )
                 os.makedirs(save_bot_dir_path, exist_ok=True)
                 bot.agent.save(save_bot_dir_path)
 
@@ -726,4 +818,4 @@ def train_parallel(config: ExperimentConfig):
 if __name__ == "__main__":
     config_gpu()
     # train()
-    # train_parallel(ExperimentConfig())
+    train_parallel(ExperimentConfig())

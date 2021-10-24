@@ -1,4 +1,6 @@
 import os
+from typing import Dict, Any
+
 import yaml
 
 import pandas as pd
@@ -12,8 +14,7 @@ def convert_config_csv_to_yml():
 
         df = pd.read_csv(f"{root}/config.csv")
 
-        data = df.loc[0].to_dict()
-        print(data)
+        data: Dict[Any, Any] = df.to_dict(orient="records")[0]
         with open(f"{root}/config.yaml", "w") as yml_file:
             yaml.dump(data, yml_file)
 

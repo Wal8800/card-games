@@ -89,7 +89,7 @@ def cards_to_ohe(cards: List[Card], padded_length: int) -> List[int]:
     return data
 
 
-def obs_to_ohe(obs: BigTwoObservation) -> np.ndarray:
+def obs_to_ohe(obs: BigTwoObservation, include_last_cards_played=True) -> np.ndarray:
     data = []
     data += obs.num_card_per_player
 
@@ -111,7 +111,8 @@ def obs_to_ohe(obs: BigTwoObservation) -> np.ndarray:
     # cards length
     data.append(len(obs.last_cards_played))
 
-    data += cards_to_ohe(obs.last_cards_played, 5)
+    if include_last_cards_played:
+        data += cards_to_ohe(obs.last_cards_played, 5)
     data += cards_to_ohe(obs.your_hands.cards, 13)
 
     return np.array(data)
@@ -301,9 +302,18 @@ def generate_action_mask(
     return result
 
 
+def set_or_add(
+    original: Optional[np.ndarray], new: Union[np.ndarray, Iterable]
+) -> np.ndarray:
+    if original is None:
+        return np.array(new)
+
+    return np.append(original, new, axis=0)
+
+
 class PlayerBuffer:
     def __init__(self, gamma=0.99, lam=0.95):
-        self.obs_buf = []
+        self.obs_buf = None
         self.act_buf = []
         self.adv_buf = []
         self.rew_buf = []
@@ -313,14 +323,14 @@ class PlayerBuffer:
         self.gamma, self.lam = gamma, lam
 
     def store(self, obs, act, rew, logp, mask):
-        self.obs_buf.append(obs)
+        self.obs_buf = set_or_add(self.obs_buf, obs)
         self.act_buf.append(act)
         self.rew_buf.append(rew)
         self.logp_buf.append(logp)
         self.mask_buf.append(mask)
 
     def get_curr_path(self):
-        return np.array(self.obs_buf)
+        return self.obs_buf
 
     def is_empty(self):
         return len(self.obs_buf) == 0
@@ -354,7 +364,9 @@ class MultiInputPlayerBuffer:
         if self.is_empty():
             self.obs_buf = obs
         else:
-            self.obs_buf = {k: v + obs[k] for k, v in self.obs_buf.items()}
+            self.obs_buf = {
+                k: np.append(v, obs[k], axis=0) for k, v in self.obs_buf.items()
+            }
 
         self.act_buf.append(act)
         self.rew_buf.append(rew)
@@ -378,15 +390,6 @@ class MultiInputPlayerBuffer:
 
         # the next line computes rewards-to-go, to be targets for the value function
         self.ret_buf = discounted_sum_of_rewards(rews, self.gamma)[:-1]
-
-
-def set_or_add(
-    original: Optional[np.ndarray], new: Union[np.ndarray, Iterable]
-) -> np.ndarray:
-    if original is None:
-        return np.array(new)
-
-    return np.append(original, new, axis=0)
 
 
 class GameBuffer(PPOBufferInterface):
@@ -444,7 +447,10 @@ class MultiInputGameBuffer(PPOBufferInterface):
         if len(self.obs_buf) == 0:
             self.obs_buf = pbuf.obs_buf
         else:
-            self.obs_buf = {k: v + pbuf.obs_buf[k] for k, v in self.obs_buf.items()}
+            self.obs_buf = {
+                k: np.append(v, pbuf.obs_buf[k], axis=0)
+                for k, v in self.obs_buf.items()
+            }
 
         self.act_buf = set_or_add(self.act_buf, pbuf.act_buf)
         self.adv_buf = set_or_add(self.adv_buf, pbuf.adv_buf)
@@ -464,7 +470,9 @@ class MultiInputGameBuffer(PPOBufferInterface):
 
     def __add__(self, other):
         result_buf = MultiInputGameBuffer()
-        result_buf.obs_buf = {k: v + other.obs_buf[k] for k, v in self.obs_buf.items()}
+        result_buf.obs_buf = {
+            k: np.append(v, other.obs_buf[k], axis=0) for k, v in self.obs_buf.items()
+        }
         result_buf.act_buf = np.append(self.act_buf, other.act_buf, axis=0)
         result_buf.adv_buf = np.append(self.adv_buf, other.adv_buf, axis=0)
         result_buf.rew_buf = np.append(self.rew_buf, other.rew_buf, axis=0)
@@ -473,141 +481,6 @@ class MultiInputGameBuffer(PPOBufferInterface):
         result_buf.mask_buf = np.append(self.mask_buf, other.mask_buf, axis=0)
 
         return result_buf
-
-
-class PPOAction:
-    def __init__(
-        self, raw_action, action_cat, transformed_obs, action_mask, logp, cards
-    ):
-        self.transformed_obs = transformed_obs
-        self.raw = raw_action
-        self.cat = action_cat
-        self.mask = action_mask
-        self.logp = logp
-        self.cards = cards
-
-
-class RandomPPOBot(BigTwoBot):
-    def __init__(self):
-        self.action_cat_mapping, self.idx_cat_mapping = create_action_cat_mapping()
-
-    def action(self, observation: BigTwoObservation) -> PPOAction:
-        action_mask = generate_action_mask(self.idx_cat_mapping, observation)
-
-        # nonzero return a tuple of 1
-        valid_moves = action_mask.nonzero()[0]
-        action_cat = np.random.choice(valid_moves)
-        raw = self.action_cat_mapping[action_cat]
-        cards = [c for idx, c in enumerate(observation.your_hands) if raw[idx] == 1]
-
-        return PPOAction(
-            transformed_obs=None,
-            raw_action=raw,
-            action_cat=action_cat,
-            action_mask=action_mask,
-            logp=None,
-            cards=cards,
-        )
-
-
-class SimplePPOBot(BigTwoBot):
-    def __init__(self, observation: BigTwoObservation, lr=0.0001, clip_ratio=0.3):
-        self.action_cat_mapping, self.idx_cat_mapping = create_action_cat_mapping()
-
-        self.agent = self._create_agent(observation, lr, clip_ratio)
-
-    def set_weights(self, policy_weights, value_weights):
-        self.agent.set_weights(policy_weights, value_weights)
-
-    def get_weights(self):
-        return self.agent.get_weights()
-
-    def action(self, observation: BigTwoObservation) -> PPOAction:
-        transformed_obs = self.transform_obs(observation)
-        action_mask = generate_action_mask(self.idx_cat_mapping, observation)
-
-        action_tensor, logp_tensor = self.agent.action(
-            obs=np.array([transformed_obs]), mask=action_mask
-        )
-        action_cat = action_tensor.numpy()
-
-        raw = self.action_cat_mapping[action_cat]
-
-        cards = [c for idx, c in enumerate(observation.your_hands) if raw[idx] == 1]
-
-        return PPOAction(
-            transformed_obs=transformed_obs,
-            raw_action=raw,
-            action_cat=action_cat,
-            action_mask=action_mask,
-            logp=logp_tensor.numpy(),
-            cards=cards,
-        )
-
-    def _create_agent(self, observation: BigTwoObservation, lr=0.0001, clip_ratio=0.3):
-        n_action = len(self.action_cat_mapping)
-        result = obs_to_ohe(observation)
-        obs_inp = layers.Input(shape=result.shape, name="obs")
-        x = layers.Dense(512, activation="relu")(obs_inp)
-        x = layers.Dense(n_action, activation="relu")(x)
-        output = layers.Dense(n_action)(x)
-        policy = keras.Model(inputs=obs_inp, outputs=output)
-
-        return PPOAgent(
-            policy,
-            get_mlp_vf(result.shape, hidden_units=256),
-            "BigTwo",
-            n_action,
-            policy_lr=lr,
-            value_lr=lr,
-            clip_ratio=clip_ratio,
-        )
-
-    def predict_value(self, observations):
-        return self.agent.predict_value(observations)
-
-    def update(self, buffer, mini_batch_size: int):
-        return self.agent.update(buffer, mini_batch_size, mask_buf=buffer.mask_buf)
-
-    def transform_obs(self, obs: BigTwoObservation):
-        return obs_to_ohe(obs)
-
-
-class SavedSimplePPOBot(BigTwoBot):
-    def __init__(self, dir_path: str):
-        self.action_cat_mapping, self.idx_cat_mapping = create_action_cat_mapping()
-        self.agent = self._create_agent(dir_path)
-
-    def action(self, observation: BigTwoObservation) -> PPOAction:
-        transformed_obs = obs_to_ohe(observation)
-        action_mask = generate_action_mask(self.idx_cat_mapping, observation)
-
-        action_tensor, logp_tensor = self.agent.action(
-            obs=np.array([transformed_obs]), mask=action_mask
-        )
-        action_cat = action_tensor.numpy()
-
-        raw = self.action_cat_mapping[action_cat]
-
-        cards = [c for idx, c in enumerate(observation.your_hands) if raw[idx] == 1]
-
-        return PPOAction(
-            transformed_obs=transformed_obs,
-            raw_action=raw,
-            action_cat=action_cat,
-            action_mask=action_mask,
-            logp=logp_tensor.numpy(),
-            cards=cards,
-        )
-
-    def _create_agent(self, dir_path: str):
-        n_action = len(self.action_cat_mapping)
-
-        return SavedPPOAgent(
-            "BigTwo",
-            n_action,
-            dir_path=dir_path,
-        )
 
 
 def create_embedded_input_policy(n_action: int) -> keras.Model:
@@ -681,6 +554,171 @@ def lstm_value(past_card_played_shape, obs_inp_shape) -> keras.Model:
     return keras.Model(inputs=[seq_inp, obs_inp], outputs=output)
 
 
+class PPOAction:
+    def __init__(
+        self, raw_action, action_cat, transformed_obs, action_mask, logp, cards
+    ):
+        self.transformed_obs = transformed_obs
+        self.raw = raw_action
+        self.cat = action_cat
+        self.mask = action_mask
+        self.logp = logp
+        self.cards = cards
+
+
+class RandomPPOBot(BigTwoBot):
+    def __init__(self):
+        self.action_cat_mapping, self.idx_cat_mapping = create_action_cat_mapping()
+
+    def action(self, observation: BigTwoObservation) -> PPOAction:
+        action_mask = generate_action_mask(self.idx_cat_mapping, observation)
+
+        # nonzero return a tuple of 1
+        valid_moves = action_mask.nonzero()[0]
+        action_cat = np.random.choice(valid_moves)
+        raw = self.action_cat_mapping[action_cat]
+        cards = [c for idx, c in enumerate(observation.your_hands) if raw[idx] == 1]
+
+        return PPOAction(
+            transformed_obs=None,
+            raw_action=raw,
+            action_cat=action_cat,
+            action_mask=action_mask,
+            logp=None,
+            cards=cards,
+        )
+
+
+def create_ppo_action(
+    agent,
+    agent_input,
+    action_mask,
+    action_cat_mapping,
+    obs: BigTwoObservation,
+) -> PPOAction:
+    action_tensor, logp_tensor = agent.action(obs=agent_input, mask=action_mask)
+    action_cat = action_tensor.numpy()
+
+    raw = action_cat_mapping[action_cat]
+
+    cards = [c for idx, c in enumerate(obs.your_hands) if raw[idx] == 1]
+
+    return PPOAction(
+        transformed_obs=agent_input,
+        raw_action=raw,
+        action_cat=action_cat,
+        action_mask=action_mask,
+        logp=logp_tensor.numpy(),
+        cards=cards,
+    )
+
+
+class SimplePPOBot(BigTwoBot):
+    def __init__(self, observation: BigTwoObservation, lr=0.0001, clip_ratio=0.3):
+        self.action_cat_mapping, self.idx_cat_mapping = create_action_cat_mapping()
+
+        self.agent = self._create_agent(observation, lr, clip_ratio)
+
+    def set_weights(self, policy_weights, value_weights):
+        self.agent.set_weights(policy_weights, value_weights)
+
+    def get_weights(self):
+        return self.agent.get_weights()
+
+    def action(self, obs: BigTwoObservation) -> PPOAction:
+        transformed_obs = self.transform_obs(obs)
+        action_mask = generate_action_mask(self.idx_cat_mapping, obs)
+        agent_input = np.array([transformed_obs])
+
+        return create_ppo_action(
+            self.agent, agent_input, action_mask, self.action_cat_mapping, obs
+        )
+
+    def _create_agent(self, observation: BigTwoObservation, lr=0.0001, clip_ratio=0.3):
+        n_action = len(self.action_cat_mapping)
+        result = obs_to_ohe(observation)
+        obs_inp = layers.Input(shape=result.shape, name="obs")
+        x = layers.Dense(512, activation="relu")(obs_inp)
+        x = layers.Dense(n_action, activation="relu")(x)
+        output = layers.Dense(n_action)(x)
+        policy = keras.Model(inputs=obs_inp, outputs=output)
+
+        return PPOAgent(
+            policy,
+            get_mlp_vf(result.shape, hidden_units=256),
+            "BigTwo",
+            n_action,
+            policy_lr=lr,
+            value_lr=lr,
+            clip_ratio=clip_ratio,
+        )
+
+    def predict_value(self, observations):
+        return self.agent.predict_value(observations)
+
+    def update(self, buffer, mini_batch_size: int):
+        return self.agent.update(buffer, mini_batch_size, mask_buf=buffer.mask_buf)
+
+    def transform_obs(self, obs: BigTwoObservation):
+        return obs_to_ohe(obs)
+
+
+class SavedSimplePPOBot(BigTwoBot):
+    def __init__(self, dir_path: str):
+        self.action_cat_mapping, self.idx_cat_mapping = create_action_cat_mapping()
+        self.agent = self._create_agent(dir_path)
+
+    def action(self, obs: BigTwoObservation) -> PPOAction:
+        transformed_obs = obs_to_ohe(obs)
+        action_mask = generate_action_mask(self.idx_cat_mapping, obs)
+        agent_input = np.array([transformed_obs])
+
+        return create_ppo_action(
+            self.agent, agent_input, action_mask, self.action_cat_mapping, obs
+        )
+
+    def _create_agent(self, dir_path: str):
+        n_action = len(self.action_cat_mapping)
+
+        return SavedPPOAgent(
+            "BigTwo",
+            n_action,
+            dir_path=dir_path,
+        )
+
+
+def obs_to_past_cards_played_input(obs: BigTwoObservation) -> Mapping[str, np.ndarray]:
+    seq_input = np.array([cards_to_ohe(cards, 5) for cards in obs.last_n_cards_played])
+
+    if seq_input.size == 0:
+        # if no carsd have been played, we will create one sequence to get the shape
+        # then later on pad it out with zero.
+        seq_input = np.array([cards_to_ohe([], 5)])
+
+    # check row if we need to pad:
+    if seq_input.shape[0] < 5:
+        required_length = 5 - seq_input.shape[0]
+        seq_input = np.pad(seq_input, [(required_length, 0), (0, 0)])
+
+    inputs = {
+        PAST_CARDS_PLAYED: seq_input,
+        CURRENT_OBS: obs_to_ohe(obs, include_last_cards_played=False),
+    }
+
+    return inputs
+
+
+class SavedPastCardsPlayedBot(SavedSimplePPOBot):
+    def action(self, obs: BigTwoObservation) -> PPOAction:
+        temp = obs_to_past_cards_played_input(obs)
+        agent_input = {k: np.array([v]) for k, v in temp.items()}
+        action_mask = generate_action_mask(self.idx_cat_mapping, obs)
+
+        return create_ppo_action(
+            self.agent, agent_input, action_mask, self.action_cat_mapping, obs
+        )
+
+
 class PastCardsPlayedBot(SimplePPOBot):
     def _create_agent(self, observation: BigTwoObservation, lr=0.0001, clip_ratio=0.3):
         n_action = len(self.action_cat_mapping)
@@ -703,50 +741,16 @@ class PastCardsPlayedBot(SimplePPOBot):
             clip_ratio=clip_ratio,
         )
 
-    def action(self, observation: BigTwoObservation) -> PPOAction:
-        temp = self.transform_obs(observation)
-        transformed = {k: np.array([v]) for k, v in temp.items()}
-        action_mask = generate_action_mask(self.idx_cat_mapping, observation)
-
-        action_tensor, logp_tensor = self.agent.action(
-            obs=transformed, mask=action_mask
-        )
-        action_cat = action_tensor.numpy()
-
-        raw = self.action_cat_mapping[action_cat]
-
-        cards = [c for idx, c in enumerate(observation.your_hands) if raw[idx] == 1]
-
-        return PPOAction(
-            transformed_obs=transformed,
-            raw_action=raw,
-            action_cat=action_cat,
-            action_mask=action_mask,
-            logp=logp_tensor.numpy(),
-            cards=cards,
+    def action(self, obs: BigTwoObservation) -> PPOAction:
+        temp = self.transform_obs(obs)
+        agent_input = {k: np.array([v]) for k, v in temp.items()}
+        action_mask = generate_action_mask(self.idx_cat_mapping, obs)
+        return create_ppo_action(
+            self.agent, agent_input, action_mask, self.action_cat_mapping, obs
         )
 
     def transform_obs(self, obs: BigTwoObservation):
-        seq_input = np.array(
-            [cards_to_ohe(cards, 5) for cards in obs.last_n_cards_played]
-        )
-
-        if seq_input.size == 0:
-            # if no carsd have been played, we will create one sequence to get the shape
-            # then later on pad it out with zero.
-            seq_input = np.array([cards_to_ohe([], 5)])
-
-        # check row if we need to pad:
-        if seq_input.shape[0] < 5:
-            required_length = 5 - seq_input.shape[0]
-            seq_input = np.pad(seq_input, [(required_length, 0), (0, 0)])
-
-        inputs = {
-            PAST_CARDS_PLAYED: seq_input,
-            CURRENT_OBS: obs_to_ohe(obs),
-        }
-
-        return inputs
+        return obs_to_past_cards_played_input(obs)
 
 
 class EmbeddedInputBot(SimplePPOBot):
@@ -765,10 +769,10 @@ class EmbeddedInputBot(SimplePPOBot):
             clip_ratio=clip_ratio,
         )
 
-    def action(self, observation: BigTwoObservation) -> PPOAction:
-        transformed_obs = self.transform_obs(observation)
+    def action(self, obs: BigTwoObservation) -> PPOAction:
+        transformed_obs = self.transform_obs(obs)
 
-        action_mask = generate_action_mask(self.idx_cat_mapping, observation)
+        action_mask = generate_action_mask(self.idx_cat_mapping, obs)
 
         action_tensor, logp_tensor = self.agent.action(
             obs=transformed_obs, mask=action_mask
@@ -777,7 +781,7 @@ class EmbeddedInputBot(SimplePPOBot):
 
         raw = self.action_cat_mapping[action_cat]
 
-        cards = [c for idx, c in enumerate(observation.your_hands) if raw[idx] == 1]
+        cards = [c for idx, c in enumerate(obs.your_hands) if raw[idx] == 1]
 
         return PPOAction(
             transformed_obs=transformed_obs,
