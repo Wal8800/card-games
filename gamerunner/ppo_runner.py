@@ -38,6 +38,7 @@ from gamerunner.ppo_bot import (
     MultiInputPlayerBuffer,
     PastCardsPlayedBot,
     SavedPastCardsPlayedBot,
+    PPOAction,
 )
 from playingcards.card import Card
 
@@ -121,11 +122,9 @@ class BotBuilder:
 def build_bot(dir_path: str):
     index = dir_path.index("/bot_save")
 
-    config = pd.read_csv(f"{dir_path[:index]}/config.csv")
+    config = read_config_from_file(f"{dir_path[:index]}/config.yaml")
 
-    bot_type = config.loc[0]["bot_type"]
-
-    return BotBuilder.create_testing_bot_by_str(bot_type, dir_path)
+    return BotBuilder.create_testing_bot(config.bot_type, dir_path)
 
 
 def get_game_buf(bot_type: BotType) -> PPOBufferInterface:
@@ -373,7 +372,7 @@ class SinglePlayerWrapper:
 
         return self.env.player_hands[right]
 
-    def step(self, action):
+    def step(self, action: PPOAction):
         obs, done = self.env.step(action.raw)
         if done:
             return obs, 1000, True
