@@ -20,7 +20,7 @@ def train():
         print(f"cards played: {obs.last_cards_played}")
 
         action = player_list[obs.current_player].action(obs)
-        new_obs, reward, done = env.step(action)
+        new_obs, done = env.step(action)
         episode_step += 1
         print("action: " + str(action))
         print(f"after player hand: {new_obs.your_hands}")

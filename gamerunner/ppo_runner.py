@@ -375,7 +375,7 @@ class SinglePlayerWrapper:
         return self.env.player_hands[right]
 
     def step(self, action):
-        obs, _, done = self.env.step(action.raw)
+        obs, done = self.env.step(action.raw)
         if done:
             return obs, 1000, True
 
@@ -388,7 +388,7 @@ class SinglePlayerWrapper:
             opponent = self.opponent_bots[current_obs.current_player]
             action = opponent.action(current_obs)
 
-            _, _, done = self.env.step(action.raw)
+            _, done = self.env.step(action.raw)
             if done:
                 return self.env.get_player_obs(self.player_number), -1000, True
 
@@ -404,7 +404,7 @@ class SinglePlayerWrapper:
             opponent = self.opponent_bots[obs.current_player]
             action = opponent.action(obs)
 
-            _, _, done = self.env.step(action.raw)
+            _, done = self.env.step(action.raw)
 
             # it should be never done since it is impossible to finish the game in the first round.
             assert not done
