@@ -521,7 +521,7 @@ class TestBigTwo(unittest.TestCase):
 
             raw_action.append(0)
 
-        new_obs, reward, done = env.step(raw_action)
+        new_obs, done = env.step(raw_action)
 
         self.assertFalse(done)
 
@@ -973,7 +973,7 @@ class TestBigTwo(unittest.TestCase):
             obs = env.get_current_player_obs()
             bot = RandomBot()
             raw_action = bot.action(obs)
-            _, _, done = env.step(raw_action)
+            _, done = env.step(raw_action)
 
             if done:
                 break
@@ -986,7 +986,7 @@ class TestBigTwo(unittest.TestCase):
         raw_action = [0] * 13
         raw_action[0] = 1
 
-        _, _, done = env.step(raw_action)
+        _, done = env.step(raw_action)
         self.assertTrue(done)
 
         # assert the current player number didn't change

@@ -303,8 +303,6 @@ class BigTwo:
 
     UNKNOWN_PLAYER = 5
 
-    INVALID_MOVE_REWARD = 0
-
     def __init__(self, hands: Optional[List[BigTwoHand]] = None):
         if hands is None:
             self.player_hands: List[BigTwoHand] = self.__create_player_hand()
@@ -535,12 +533,11 @@ class BigTwo:
 
         return False
 
-    def step(self, raw_action: List[int]) -> Tuple[BigTwoObservation, int, bool]:
+    def step(self, raw_action: List[int]) -> Tuple[BigTwoObservation, bool]:
         # only proceeds when game is not done.
         if self.is_done():
             return (
                 self._current_observation(self.current_player),
-                BigTwo.INVALID_MOVE_REWARD,
                 True,
             )
 
@@ -549,7 +546,6 @@ class BigTwo:
             self.__increment_event("invalid raw action")
             return (
                 self._current_observation(self.current_player),
-                BigTwo.INVALID_MOVE_REWARD,
                 False,
             )
 
@@ -560,7 +556,6 @@ class BigTwo:
                 if idx >= len(player_hand):
                     return (
                         self._current_observation(self.current_player),
-                        BigTwo.INVALID_MOVE_REWARD,
                         False,
                     )
                 action.append(player_hand[idx])
@@ -578,7 +573,6 @@ class BigTwo:
                 self.__increment_event(event)
                 return (
                     self._current_observation(self.current_player),
-                    BigTwo.INVALID_MOVE_REWARD,
                     False,
                 )
 
@@ -588,14 +582,12 @@ class BigTwo:
             if self.current_player > self.number_of_players() - 1:
                 self.current_player = 0
 
-            # 0 rewards for skipping
-            return self._current_observation(previous_player), 0, False
+            return self._current_observation(previous_player), False
 
         if not BigTwo.is_valid_card_combination(action):
             self.__increment_event("invalid combination")
             return (
                 self._current_observation(self.current_player),
-                BigTwo.INVALID_MOVE_REWARD,
                 False,
             )
 
@@ -605,7 +597,6 @@ class BigTwo:
                 self.__increment_event("play diamond three")
                 return (
                     self._current_observation(self.current_player),
-                    BigTwo.INVALID_MOVE_REWARD,
                     False,
                 )
             return self._apply_action(action)
@@ -619,7 +610,6 @@ class BigTwo:
                 self.__increment_event("unequal number of cards")
             return (
                 self._current_observation(self.current_player),
-                BigTwo.INVALID_MOVE_REWARD,
                 False,
             )
 
@@ -815,7 +805,7 @@ class BigTwo:
             self.get_n_last_cards_played(5),
         )
 
-    def _apply_action(self, action) -> Tuple[BigTwoObservation, int, bool]:
+    def _apply_action(self, action) -> Tuple[BigTwoObservation, bool]:
         self.state.append((self.current_player, action))
         self.player_hands[self.current_player].remove_cards(action)
 
@@ -826,8 +816,7 @@ class BigTwo:
         self.player_last_played = previous_player
 
         game_finished = len(self.player_hands[previous_player]) == 0
-        reward = 1000 if game_finished else 0
-        return self._current_observation(previous_player), reward, game_finished
+        return self._current_observation(previous_player), game_finished
 
     def __create_player_hand(self) -> List[BigTwoHand]:
         hands = Deck().shuffle_and_split(self.number_of_players())

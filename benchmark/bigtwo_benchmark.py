@@ -106,7 +106,7 @@ def sample_worker(input_queue: Queue, output: Queue):
                     bot = bots[player_key]
 
                     action = bot.action(obs)
-                    _, _, done = bigtwo.step(action.raw)
+                    _, done = bigtwo.step(action.raw)
 
                     if done:
                         output.put(player_key)
