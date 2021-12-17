@@ -5,11 +5,10 @@ from typing import List
 
 import cairosvg
 from PIL import Image, ImageTk
-import pandas as pd
 
 from bigtwo.bigtwo import BigTwo, BigTwoHand
-from gamerunner.ppo_bot import SavedSimplePPOBot, PPOAction
-from gamerunner.ppo_runner import SinglePlayerWrapper, BotBuilder, build_bot
+from gamerunner.ppo_bot import PPOAction
+from gamerunner.ppo_runner import SinglePlayerWrapper, build_bot
 from playingcards.card import Suit, Rank, Card
 
 suit_image_mapping = {
