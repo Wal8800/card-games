@@ -7,3 +7,7 @@ lint:
 
 tensorboard:
 	tensorboard --logdir gamerunner/experiments
+
+build_gamerunner:
+	docker build -t card-game-runner:$(git rev-parse --short HEAD) .
+

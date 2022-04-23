@@ -35,6 +35,16 @@ cd gamerunner
 PYTHONPATH=.. python ppo_runner.py
 ```
 
+or if you have nvidia-docker installed, you can use docker to run the training
+
+```
+docker build -t card-game-runner:$(git rev-parse --short HEAD) .
+docker run --rm --gpus all -v $(pwd):/card-games -e PYTHONPATH=.. -it card-game-runner:$(git rev-parse --short HEAD) bash
+
+# cd /card-games/gamerunner
+python ppo_runner.py
+```
+
 ### Run tests
 
 ```

@@ -820,6 +820,7 @@ def train_parallel():
 
 
 if __name__ == "__main__":
-    # config_gpu()
-    train()
-    # train_parallel()
+    # train()
+
+    config_gpu()
+    train_parallel()

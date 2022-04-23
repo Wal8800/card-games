@@ -1,8 +1,8 @@
 bot_save_freq: 100
-bot_type: LSTMPPOBot
+bot_type: SimplePPOBot
 buffer_size: 4000
 clip_ratio: 0.3
-epoch: 10
+epoch: 100
 game_data_flush_freq: 100
 lr: 0.0001
 mini_batch_size: 1028
