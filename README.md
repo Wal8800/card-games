@@ -35,7 +35,7 @@ cd gamerunner
 PYTHONPATH=.. python ppo_runner.py
 ```
 
-or if you have nvidia-docker installed, you can use docker to run the training
+or if you have [nvidia-docker](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/install-guide.html#docker) installed, you can use docker to run the training
 
 ```
 docker build -t card-game-runner:$(git rev-parse --short HEAD) .
