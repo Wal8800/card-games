@@ -1,12 +1,8 @@
 import unittest
 
-from bigtwo.bigtwo import (
-    BigTwo,
-    BigTwoHand,
-    find_combinations_from_cards,
-)
+from bigtwo.bigtwo import BigTwo, BigTwoHand, find_combinations_from_cards
 from gamerunner.random_bot import RandomBot
-from playingcards.card import Card, Suit, Rank
+from playingcards.card import Card, Rank, Suit
 
 
 class TestBigTwo(unittest.TestCase):

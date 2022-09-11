@@ -5,7 +5,7 @@ import numpy as np
 import scipy.signal
 import tensorflow as tf
 import tensorflow.keras as keras
-from tensorflow.keras import layers, optimizers, models
+from tensorflow.keras import layers, models, optimizers
 from tensorflow_probability import distributions as tfd
 
 
@@ -90,7 +90,7 @@ class VPGAgent:
             return
 
         # creating the policy
-        obs_inp = layers.Input(shape=(obs_dim,), name="obs")
+        obs_inp = tf.keras.Input(shape=(obs_dim,), name="obs")
         x = layers.Dense(32, activation="relu")(obs_inp)
         output = layers.Dense(act_dim)(x)
         self.policy = VanillaPG(inputs=obs_inp, outputs=output)
@@ -191,6 +191,10 @@ def action_with_mask_x(model, obs, n_action, mask):
     logits = model(obs, training=False)
 
     adder = (1.0 - tf.cast(mask, logits.dtype)) * -1e9
+    """
+    1 = 0
+    0 = -1e9
+    """
     logits = logits + adder
 
     logp_all = tf.nn.log_softmax(logits)

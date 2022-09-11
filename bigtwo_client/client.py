@@ -9,7 +9,7 @@ from PIL import Image, ImageTk
 from bigtwo.bigtwo import BigTwo, BigTwoHand
 from gamerunner.ppo_bot import PPOAction
 from gamerunner.ppo_runner import SinglePlayerWrapper, build_bot
-from playingcards.card import Suit, Rank, Card
+from playingcards.card import Card, Rank, Suit
 
 suit_image_mapping = {
     Suit.spades: "S",

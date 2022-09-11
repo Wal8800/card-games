@@ -4,21 +4,20 @@ import pickle
 import time
 from collections import Counter
 from datetime import datetime
-from multiprocessing import Queue, Process
+from multiprocessing import Process, Queue
 from typing import List
 
 from tqdm import trange
 
 from bigtwo.bigtwo import (
-    find_combinations_from_cards,
-    bf_find_combinations_from_cards,
-    straight_rank_order,
-    BigTwoHand,
     BigTwo,
+    BigTwoHand,
+    bf_find_combinations_from_cards,
+    find_combinations_from_cards,
+    STRAIGHT_RANK_ORDER,
 )
-
 from gamerunner.ppo_runner import build_bot
-from playingcards.card import Deck, Card
+from playingcards.card import Card, Deck
 
 
 def bench_find_combinations_from_cards():
@@ -48,7 +47,7 @@ def check_find_combinations_from_cards():
             c1 = bf_find_combinations_from_cards(hand)
 
             c1 = {
-                k: [sorted(c, key=lambda r: straight_rank_order[r.rank]) for c in v]
+                k: [sorted(c, key=lambda r: STRAIGHT_RANK_ORDER[r.rank]) for c in v]
                 for k, v in c1.items()
             }
             c2 = find_combinations_from_cards(hand)
@@ -82,13 +81,13 @@ def sample_worker(input_queue: Queue, output: Queue):
             dir_path="../gamerunner/experiments/2021_07_13_21_31_32/bot_save/2021_07_13_21_31_32_10000",
         ),
         "player_two": build_bot(
-            dir_path="../gamerunner/experiments/2021_09_12_22_24_49/bot_save/2021_09_12_22_24_49_9999",
+            dir_path="../gamerunner/experiments/2021_07_13_21_31_32/bot_save/2021_07_13_21_31_32_10000",
         ),
         "player_three": build_bot(
             dir_path="../gamerunner/experiments/2021_07_13_21_31_32/bot_save/2021_07_13_21_31_32_10000",
         ),
         "player_four": build_bot(
-            dir_path="../gamerunner/experiments/2021_09_12_22_24_49/bot_save/2021_09_12_22_24_49_9999",
+            dir_path="../gamerunner/experiments/2021_07_13_21_31_32/bot_save/2021_07_13_21_31_32_10000",
         ),
     }
 

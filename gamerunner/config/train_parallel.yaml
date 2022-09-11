@@ -1,7 +1,7 @@
-bot_type: LSTMPPOBot
+bot_type: SimplePPOBot
 buffer_size: 4000
 clip_ratio: 0.3
-epoch: 10000
+epoch: 10
 lr: 0.0001
 mini_batch_size: 512
 num_of_worker: 10

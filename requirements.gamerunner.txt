@@ -1,7 +1,0 @@
-pandas==1.1.5
-psutil==5.8.0
-Pympler==0.9
-PyYAML==5.4.1
-scipy==1.5.4
-tensorflow==2.6.1
-tensorflow-probability==0.12.1

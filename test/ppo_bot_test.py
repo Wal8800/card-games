@@ -5,18 +5,18 @@ import tensorflow as tf
 import tensorflow.keras as keras
 from tensorflow.keras import layers
 
-from bigtwo.bigtwo import BigTwoHand, BigTwoObservation, BigTwo
+from bigtwo.bigtwo import BigTwo, BigTwoHand, BigTwoObservation
 from gamerunner.ppo_bot import (
-    create_action_cat_mapping,
-    generate_action_mask,
     EmbeddedInputBot,
-    SimplePPOBot,
-    RandomPPOBot,
-    cards_to_ohe,
-    obs_to_ohe,
     PastCardsPlayedBot,
+    RandomPPOBot,
+    SimplePPOBot,
+    cards_to_ohe,
+    create_action_cat_mapping,
+    obs_to_ohe,
 )
-from playingcards.card import Card, Suit, Rank
+from bigtwo.preprocessing import generate_action_mask
+from playingcards.card import Card, Rank, Suit
 
 
 def config_gpu():

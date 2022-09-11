@@ -1,7 +1,6 @@
 import itertools
 from enum import Enum
 from random import shuffle
-
 from typing import List
 
 
@@ -29,12 +28,7 @@ class Rank(Enum):
 
 
 class Card:
-    SUIT_NUMBER = {
-        Suit.spades: 0,
-        Suit.hearts: 1,
-        Suit.clubs: 2,
-        Suit.diamond: 3
-    }
+    SUIT_NUMBER = {Suit.spades: 0, Suit.hearts: 1, Suit.clubs: 2, Suit.diamond: 3}
 
     RANK_NUMBER = {
         Rank.ace: 0,
@@ -83,7 +77,7 @@ class Card:
     @staticmethod
     def display_cards_string(cards):
         filtered_list = [x for x in cards if x > -1]
-        return ' '.join(str(Card.from_number(x)) for x in filtered_list)
+        return " ".join(str(Card.from_number(x)) for x in filtered_list)
 
     def is_same_suit(self, card) -> bool:
         return self.suit == card.suit
@@ -103,7 +97,9 @@ class Deck:
     def __init__(self):
         self.cards = []
 
-        for element in itertools.product(Suit.__members__.items(), Rank.__members__.items()):
+        for element in itertools.product(
+            Suit.__members__.items(), Rank.__members__.items()
+        ):
             suit = element[0][1]
             rank = element[1][1]
 

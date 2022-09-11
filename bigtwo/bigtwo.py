@@ -1,11 +1,11 @@
 import itertools
 from collections import Counter
 from collections.abc import MutableSequence
-from typing import List, Dict, Tuple, Optional
+from typing import Dict, List, Optional, Tuple
 
-from playingcards.card import Card, Deck, Suit, Rank
+from playingcards.card import Card, Deck, Rank, Suit
 
-straight_rank_order = {
+STRAIGHT_RANK_ORDER = {
     Rank.ace: 1,
     Rank.two: 2,
     Rank.three: 3,
@@ -21,7 +21,7 @@ straight_rank_order = {
     Rank.king: 13,
 }
 
-rank_order = {
+RANK_ORDER = {
     Rank.three: 1,
     Rank.four: 2,
     Rank.five: 3,
@@ -37,7 +37,7 @@ rank_order = {
     Rank.two: 13,
 }
 
-suit_order = {Suit.diamond: 1, Suit.clubs: 2, Suit.hearts: 3, Suit.spades: 4}
+SUIT_ORDER = {Suit.diamond: 1, Suit.clubs: 2, Suit.hearts: 3, Suit.spades: 4}
 
 
 def have_diamond_three(hand):
@@ -116,7 +116,7 @@ def find_combinations_from_cards(input_cards: List[Card]):
             current_list = combinations.get(BigTwo.FULL_HOUSE, []) + full_house
             combinations[BigTwo.FULL_HOUSE] = current_list
 
-    sorted_ranks = sorted(list(rank_map.keys()), key=lambda r: straight_rank_order[r])
+    sorted_ranks = sorted(list(rank_map.keys()), key=lambda r: STRAIGHT_RANK_ORDER[r])
 
     if len(sorted_ranks) < 5:
         # can't have straight if we don't have at least 5 unique rank
@@ -128,7 +128,7 @@ def find_combinations_from_cards(input_cards: List[Card]):
     for i in range(0, len(sorted_ranks) - 4):
         first_rank = sorted_ranks[i]
         last_rank = sorted_ranks[i + 4]
-        if straight_rank_order[first_rank] + 4 != straight_rank_order[last_rank]:
+        if STRAIGHT_RANK_ORDER[first_rank] + 4 != STRAIGHT_RANK_ORDER[last_rank]:
             continue
 
         list_of_rank_cards = [rank_map[rank] for rank in sorted_ranks[i : i + 5]]
@@ -389,10 +389,10 @@ class BigTwo:
             return False
 
         # straight_rank_order starts from ace, two, ... to king
-        sorted_rank = sorted(rank_map.keys(), key=lambda r: straight_rank_order[r])
+        sorted_rank = sorted(rank_map.keys(), key=lambda r: STRAIGHT_RANK_ORDER[r])
 
-        first_rank_order = straight_rank_order[sorted_rank[0]]
-        last_rank_order = straight_rank_order[sorted_rank[4]]
+        first_rank_order = STRAIGHT_RANK_ORDER[sorted_rank[0]]
+        last_rank_order = STRAIGHT_RANK_ORDER[sorted_rank[4]]
 
         # generaly the first and last card of a straight is 4 rank aparts
         if first_rank_order + 4 == last_rank_order:
@@ -417,16 +417,16 @@ class BigTwo:
             raise ValueError("Number of cards is incorrect")
 
         if len(cards) == 1 or len(cards) == 2:
-            rank_one = rank_order[cards[0].rank]
-            rank_two = rank_order[current_combination[0].rank]
+            rank_one = RANK_ORDER[cards[0].rank]
+            rank_two = RANK_ORDER[current_combination[0].rank]
 
             if rank_one == rank_two:
-                cards = sorted(cards, key=lambda c: suit_order[c.suit], reverse=True)
+                cards = sorted(cards, key=lambda c: SUIT_ORDER[c.suit], reverse=True)
                 current_combination = sorted(
-                    current_combination, key=lambda c: suit_order[c.suit], reverse=True
+                    current_combination, key=lambda c: SUIT_ORDER[c.suit], reverse=True
                 )
-                suit_one = suit_order[cards[0].suit]
-                suit_two = suit_order[current_combination[0].suit]
+                suit_one = SUIT_ORDER[cards[0].suit]
+                suit_two = SUIT_ORDER[current_combination[0].suit]
                 return suit_one > suit_two
 
             return rank_one > rank_two
@@ -441,16 +441,16 @@ class BigTwo:
             )
 
         if combination_one is BigTwo.STRAIGHT_FLUSH or combination_one is BigTwo.FLUSH:
-            suit_one = suit_order[cards[0].suit]
-            suit_two = suit_order[current_combination[0].suit]
+            suit_one = SUIT_ORDER[cards[0].suit]
+            suit_two = SUIT_ORDER[current_combination[0].suit]
 
             if suit_one is not suit_two:
                 return suit_one > suit_two
 
         # sort in Descending order to get the biggiest card to be first
-        cards = sorted(cards, key=lambda c: rank_order[c.rank], reverse=True)
+        cards = sorted(cards, key=lambda c: RANK_ORDER[c.rank], reverse=True)
         current_combination = sorted(
-            current_combination, key=lambda c: rank_order[c.rank], reverse=True
+            current_combination, key=lambda c: RANK_ORDER[c.rank], reverse=True
         )
 
         if (
@@ -463,17 +463,17 @@ class BigTwo:
             card_one_rank = cards[0].rank
             card_two_rank = current_combination[0].rank
 
-            rank_one = rank_order[card_one_rank]
-            rank_two = rank_order[card_two_rank]
+            rank_one = RANK_ORDER[card_one_rank]
+            rank_two = RANK_ORDER[card_two_rank]
             if rank_one == rank_two:
                 # special case for A 2 3 4 4 and 2 3 4 5 6
                 if cards[1].rank is not current_combination[1].rank:
                     return (
-                        rank_order[cards[1].rank]
-                        > rank_order[current_combination[1].rank]
+                            RANK_ORDER[cards[1].rank]
+                            > RANK_ORDER[current_combination[1].rank]
                     )
                 return (
-                    suit_order[cards[0].suit] > suit_order[current_combination[0].suit]
+                        SUIT_ORDER[cards[0].suit] > SUIT_ORDER[current_combination[0].suit]
                 )
             return rank_one > rank_two
 
@@ -489,7 +489,7 @@ class BigTwo:
         # most_common return a list of tuples
         common_one_rank = Counter(rank_one_list).most_common(1)[0][0]
         common_two_rank = Counter(rank_two_list).most_common(1)[0][0]
-        return rank_order[common_one_rank] > rank_order[common_two_rank]
+        return RANK_ORDER[common_one_rank] > RANK_ORDER[common_two_rank]
 
     @staticmethod
     def get_five_card_type(cards: List[Card]):
@@ -635,10 +635,10 @@ class BigTwo:
         return self._current_observation(self._get_current_player())
 
     def is_rank_gt(self, rank_one: Rank, rank_two: Rank) -> bool:
-        return rank_order[rank_one] > rank_order[rank_two]
+        return RANK_ORDER[rank_one] > RANK_ORDER[rank_two]
 
     def is_suit_gt(self, suit_one: Suit, suit_two: Suit) -> bool:
-        return suit_order[suit_one] > suit_order[suit_two]
+        return SUIT_ORDER[suit_one] > SUIT_ORDER[suit_two]
 
     def have_playable_cards(self, target: List[Card], player_hand: BigTwoHand) -> bool:
         if len(target) == 0:

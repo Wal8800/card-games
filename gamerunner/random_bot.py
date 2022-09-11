@@ -5,13 +5,9 @@ import numpy as np
 
 from bigtwo.bigtwo import BigTwoObservation
 from gamerunner.big_two_bot import BigTwoBot
-from gamerunner.ppo_bot import (
-    generate_all_option,
-    generate_single_options,
-    generate_pair_options,
-    generate_combinations_options,
-)
-from playingcards.card import Suit, Rank, Card
+from bigtwo.preprocessing import generate_all_option, generate_single_options, generate_pair_options, \
+    generate_combinations_options
+from playingcards.card import Card, Rank, Suit
 
 
 class RandomBot(BigTwoBot):

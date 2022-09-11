@@ -1,5 +1,5 @@
-import cProfile
 import copy
+import cProfile
 import gc
 import io
 import itertools
@@ -13,32 +13,31 @@ import random
 import sys
 import time
 import tracemalloc
-from dataclasses import dataclass, asdict
+from dataclasses import asdict, dataclass
 from datetime import datetime
 from enum import Enum
-from multiprocessing import Queue, Process
+from multiprocessing import Process, Queue
 from pstats import SortKey
-from typing import Dict, List, Tuple, Any, Mapping
+from typing import Any, Dict, List, Mapping, Tuple
 
 import numpy as np
-import pandas as pd
 import psutil
 import tensorflow as tf
 import yaml
-from pympler import summary, muppy
+from pympler import muppy, summary
 
 from algorithm.agent import PPOBufferInterface
-from bigtwo.bigtwo import BigTwo, BigTwoObservation, BigTwoHand
+from bigtwo.bigtwo import BigTwo, BigTwoHand, BigTwoObservation
 from gamerunner.ppo_bot import (
-    SimplePPOBot,
     GameBuffer,
-    PlayerBuffer,
-    SavedSimplePPOBot,
     MultiInputGameBuffer,
     MultiInputPlayerBuffer,
     PastCardsPlayedBot,
-    SavedPastCardsPlayedBot,
+    PlayerBuffer,
     PPOAction,
+    SavedPastCardsPlayedBot,
+    SavedSimplePPOBot,
+    SimplePPOBot,
 )
 from playingcards.card import Card
 
@@ -820,7 +819,9 @@ def train_parallel():
 
 
 if __name__ == "__main__":
-    # train()
-
     config_gpu()
+
+    start_time = time.time()
     train_parallel()
+
+    print(time.time() - start_time)

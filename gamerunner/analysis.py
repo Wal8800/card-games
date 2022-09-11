@@ -10,7 +10,7 @@ import seaborn as sns
 import tqdm
 
 from bigtwo import bigtwo
-from bigtwo.bigtwo import rank_order, BigTwoHand
+from bigtwo.bigtwo import BigTwoHand, RANK_ORDER
 from playingcards.card import Card, Deck, Rank
 
 pd.set_option("display.max_rows", 500)
@@ -84,7 +84,7 @@ class PlayAgainstOpponent(EpisodeProcessor):
     ):
         target_rank = target[0].rank
         action_rank = action[0].rank
-        rank_diff = rank_order[action_rank] - rank_order[target_rank]
+        rank_diff = RANK_ORDER[action_rank] - RANK_ORDER[target_rank]
 
         if len(target) == 1:
             self.single_rank_diff.append(rank_diff)
@@ -148,9 +148,9 @@ class PlayAnyCard(EpisodeProcessor):
         self, target: List[Card], current_hand: List[Card], action: List[Card]
     ):
         hand = BigTwoHand(current_hand)
-        action_rank = rank_order[action[0].rank]
+        action_rank = RANK_ORDER[action[0].rank]
         if len(action) == 1:
-            card_ranks = [rank_order[c.rank] for c in current_hand]
+            card_ranks = [RANK_ORDER[c.rank] for c in current_hand]
             max_diff = max(card_ranks) - action_rank
             min_diff = action_rank - min(card_ranks)
 
@@ -158,7 +158,7 @@ class PlayAnyCard(EpisodeProcessor):
             self.single_min_rank_diff.append(min_diff)
 
         if len(action) == 2:
-            pair_ranks = [rank_order[pair[0].rank] for pair in hand.pairs]
+            pair_ranks = [RANK_ORDER[pair[0].rank] for pair in hand.pairs]
 
             max_diff = max(pair_ranks) - action_rank
             min_diff = action_rank - min(pair_ranks)
@@ -404,7 +404,7 @@ def main():
 
 
 def hand_strength_calculator(player_hand: BigTwoHand) -> int:
-    strength = sum([bigtwo.rank_order[card.rank] for card in player_hand])
+    strength = sum([bigtwo.RANK_ORDER[card.rank] for card in player_hand])
 
     # for card_one, _ in player_hand.pairs:
     #     strength += bigtwo.rank_order[card_one.rank]

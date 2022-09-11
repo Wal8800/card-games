@@ -1,9 +1,9 @@
 import unittest
 
 from bigtwo.bigtwo import BigTwo, BigTwoHand, BigTwoObservation
-from gamerunner.ppo_bot import RandomPPOBot, PPOAction
+from gamerunner.ppo_bot import PPOAction, RandomPPOBot
 from gamerunner.ppo_runner import SinglePlayerWrapper
-from playingcards.card import Suit, Rank, Card
+from playingcards.card import Card, Rank, Suit
 
 
 class PlayFirstCardBot:

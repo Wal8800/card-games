@@ -41,6 +41,8 @@ or if you have [nvidia-docker](https://docs.nvidia.com/datacenter/cloud-native/c
 docker build -t card-game-runner:$(git rev-parse --short HEAD) .
 docker run --rm --gpus all -v $(pwd):/card-games -e PYTHONPATH=.. -it card-game-runner:$(git rev-parse --short HEAD) bash
 
+docker run --rm --gpus all -v $(pwd):/card-games -e PYTHONPATH=.. -it ray-runner:$(git rev-parse --short HEAD) bash
+
 # cd /card-games/gamerunner
 python ppo_runner.py
 ```

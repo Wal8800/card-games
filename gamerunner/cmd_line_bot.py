@@ -1,6 +1,7 @@
 from typing import List
 
 from big_two_bot import BigTwoBot
+
 from bigtwo.bigtwo import BigTwoObservation
 
 

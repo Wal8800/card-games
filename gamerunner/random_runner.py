@@ -1,5 +1,6 @@
-from bigtwo.bigtwo import BigTwo
 from random_bot import RandomBot
+
+from bigtwo.bigtwo import BigTwo
 
 
 def train():
