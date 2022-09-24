@@ -469,11 +469,11 @@ class BigTwo:
                 # special case for A 2 3 4 4 and 2 3 4 5 6
                 if cards[1].rank is not current_combination[1].rank:
                     return (
-                            RANK_ORDER[cards[1].rank]
-                            > RANK_ORDER[current_combination[1].rank]
+                        RANK_ORDER[cards[1].rank]
+                        > RANK_ORDER[current_combination[1].rank]
                     )
                 return (
-                        SUIT_ORDER[cards[0].suit] > SUIT_ORDER[current_combination[0].suit]
+                    SUIT_ORDER[cards[0].suit] > SUIT_ORDER[current_combination[0].suit]
                 )
             return rank_one > rank_two
 

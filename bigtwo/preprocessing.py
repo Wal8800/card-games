@@ -4,9 +4,8 @@ from typing import List, Tuple
 
 import numpy as np
 
-from bigtwo.bigtwo import BigTwoObservation, BigTwoHand, BigTwo
+from bigtwo.bigtwo import BigTwo, BigTwoHand, BigTwoObservation
 from playingcards.card import Card, Rank, Suit
-
 
 SUIT_OHE = {
     Suit.spades: [0, 0, 0, 1],

@@ -4,9 +4,13 @@ from typing import List
 import numpy as np
 
 from bigtwo.bigtwo import BigTwoObservation
+from bigtwo.preprocessing import (
+    generate_all_option,
+    generate_combinations_options,
+    generate_pair_options,
+    generate_single_options,
+)
 from gamerunner.big_two_bot import BigTwoBot
-from bigtwo.preprocessing import generate_all_option, generate_single_options, generate_pair_options, \
-    generate_combinations_options
 from playingcards.card import Card, Rank, Suit
 
 

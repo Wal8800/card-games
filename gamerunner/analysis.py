@@ -10,7 +10,7 @@ import seaborn as sns
 import tqdm
 
 from bigtwo import bigtwo
-from bigtwo.bigtwo import BigTwoHand, RANK_ORDER
+from bigtwo.bigtwo import RANK_ORDER, BigTwoHand
 from playingcards.card import Card, Deck, Rank
 
 pd.set_option("display.max_rows", 500)

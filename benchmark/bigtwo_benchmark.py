@@ -10,11 +10,11 @@ from typing import List
 from tqdm import trange
 
 from bigtwo.bigtwo import (
+    STRAIGHT_RANK_ORDER,
     BigTwo,
     BigTwoHand,
     bf_find_combinations_from_cards,
     find_combinations_from_cards,
-    STRAIGHT_RANK_ORDER,
 )
 from gamerunner.ppo_runner import build_bot
 from playingcards.card import Card, Deck

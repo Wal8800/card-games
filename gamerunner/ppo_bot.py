@@ -12,7 +12,12 @@ from algorithm.agent import (
     get_mlp_vf,
 )
 from bigtwo.bigtwo import BigTwoObservation
-from bigtwo.preprocessing import create_action_cat_mapping, obs_to_ohe, cards_to_ohe, generate_action_mask
+from bigtwo.preprocessing import (
+    cards_to_ohe,
+    create_action_cat_mapping,
+    generate_action_mask,
+    obs_to_ohe,
+)
 from gamerunner.big_two_bot import BigTwoBot
 
 PAST_CARDS_PLAYED = "past_cards_played"

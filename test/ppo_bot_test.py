@@ -6,6 +6,7 @@ import tensorflow.keras as keras
 from tensorflow.keras import layers
 
 from bigtwo.bigtwo import BigTwo, BigTwoHand, BigTwoObservation
+from bigtwo.preprocessing import generate_action_mask
 from gamerunner.ppo_bot import (
     EmbeddedInputBot,
     PastCardsPlayedBot,
@@ -15,7 +16,6 @@ from gamerunner.ppo_bot import (
     create_action_cat_mapping,
     obs_to_ohe,
 )
-from bigtwo.preprocessing import generate_action_mask
 from playingcards.card import Card, Rank, Suit
 
 
