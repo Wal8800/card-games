@@ -6,3 +6,8 @@ venv
 /gamerunner/experiments/*
 /gamerunner/analysis_result/
 /archive/
+/ray_runner/temp_results/
+/ray_runner/temp_ray_results/
+/ray_runner/results/bigtwo_v1/
+*.pickle
+
