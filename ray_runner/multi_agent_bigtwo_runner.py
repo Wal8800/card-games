@@ -1,63 +1,57 @@
-import time
-from typing import List, TypeVar
+import logging
+from abc import ABC
+from typing import List, Dict, Union
 
 import numpy as np
 import ray
 import tensorflow as tf
 from opentelemetry import trace
-from opentelemetry.propagators.textmap import CarrierT
+from opentelemetry.trace.propagation.tracecontext import TraceContextTextMapPropagator
 from ray import shutdown, tune
-from ray.rllib import SampleBatch
-from ray.rllib.agents import MultiCallbacks
-from ray.rllib.agents.ppo import PPOTFPolicy
-from ray.rllib.agents.ppo.ppo import (
-    DEFAULT_CONFIG,
-    UpdateKL,
-    get_policy_class,
-    validate_config,
-    warn_about_bad_reward_scales,
-)
-from ray.rllib.agents.trainer_template import build_trainer
-from ray.rllib.evaluation import RolloutWorker
-from ray.rllib.evaluation.worker_set import WorkerSet
+from ray.rllib.algorithms.callbacks import MultiCallbacks
+from ray.rllib.algorithms.ppo import PPOConfig
+from ray.rllib.algorithms.ppo.ppo import PPO
 from ray.rllib.execution import (
-    ConcatBatches,
-    ParallelRollouts,
-    SelectExperiences,
-    StandardizeFields,
-    StandardMetricsReporting,
+    synchronous_parallel_sample,
+    train_one_step,
 )
 from ray.rllib.execution.common import (
-    AGENT_STEPS_TRAINED_COUNTER,
     LEARN_ON_BATCH_TIMER,
-    STEPS_TRAINED_COUNTER,
-    WORKER_UPDATE_TIMER,
-    _check_sample_batch_type,
-    _get_global_vars,
-    _get_shared_metrics,
 )
+from ray.rllib.execution.rollout_ops import standardize_fields as standardize_fields_fn
+from ray.rllib.execution.train_ops import multi_gpu_train_one_step
 from ray.rllib.models import ModelCatalog
 from ray.rllib.models.tf import FullyConnectedNetwork
 from ray.rllib.models.tf.tf_modelv2 import TFModelV2
 from ray.rllib.policy.sample_batch import DEFAULT_POLICY_ID, MultiAgentBatch
-from ray.rllib.utils.metrics.learner_info import LEARNER_INFO, LearnerInfoBuilder
+from ray.rllib.utils.metrics import (
+    NUM_AGENT_STEPS_SAMPLED,
+    NUM_ENV_STEPS_SAMPLED,
+    SYNCH_WORKER_WEIGHTS_TIMER,
+    NUM_ENV_STEPS_TRAINED,
+    NUM_AGENT_STEPS_TRAINED,
+)
+from ray.rllib.utils.metrics.learner_info import (
+    LearnerInfoBuilder,
+    LEARNER_STATS_KEY,
+)
 from ray.rllib.utils.sgd import minibatches, standardized
 from ray.rllib.utils.typing import (
-    PolicyID,
     SampleBatchType,
     TensorType,
-    TrainerConfigDict,
+    ResultDict,
 )
 from ray.tune.registry import register_env
-from ray.util.iter import LocalIterator
+from ray.util import log_once
 
 from ray_runner.bigtwo_multi_agent import BigTwoMultiAgentEnv
 from ray_runner.ray_custom_util import (
     CustomMetricCallback,
-    TraceLocalIterator,
-    TraceOps,
-    trace_propagator,
 )
+
+TRACE_PROPAGATOR = TraceContextTextMapPropagator()
+LOGGER = logging.getLogger(__name__)
+TRACE_CARRIER_KEY = "trace_carrier"
 
 
 class ParametricActionsModel(TFModelV2):
@@ -104,19 +98,20 @@ def custom_do_minibatch_sgd(
     """Execute minibatch SGD.
 
     Args:
-        samples (SampleBatch): Batch of samples to optimize.
-        policies (dict): Dictionary of policies to optimize.
-        local_worker (RolloutWorker): Master rollout worker instance.
-        num_sgd_iter (int): Number of epochs of optimization to take.
-        sgd_minibatch_size (int): Size of minibatches to use for optimization.
-        standardize_fields (list): List of sample field names that should be
+        samples: Batch of samples to optimize.
+        policies: Dictionary of policies to optimize.
+        local_worker: Master rollout worker instance.
+        num_sgd_iter: Number of epochs of optimization to take.
+        sgd_minibatch_size: Size of minibatches to use for optimization.
+        standardize_fields: List of sample field names that should be
             normalized prior to optimization.
 
     Returns:
         averaged info fetches over the last SGD epoch taken.
     """
-    if isinstance(samples, SampleBatch):
-        samples = MultiAgentBatch({DEFAULT_POLICY_ID: samples}, samples.count)
+
+    # Handle everything as if multi-agent.
+    samples = samples.as_multi_agent()
 
     # Use LearnerInfoBuilder as a unified way to build the final
     # results dict from `learn_on_loaded_batch` call(s).
@@ -125,7 +120,7 @@ def custom_do_minibatch_sgd(
     # tf vs torch).
     learner_info_builder = LearnerInfoBuilder(num_devices=1)
     tracer = trace.get_tracer(__name__)
-    for policy_id in policies.keys():
+    for policy_id, policy in policies.items():
         if policy_id not in samples.policy_batches:
             continue
 
@@ -133,13 +128,27 @@ def custom_do_minibatch_sgd(
         for field in standardize_fields:
             batch[field] = standardized(batch[field])
 
+        # Check to make sure that the sgd_minibatch_size is not smaller
+        # than max_seq_len otherwise this will cause indexing errors while
+        # performing sgd when using a RNN or Attention model
+        if (
+            policy.is_recurrent()
+            and policy.config["model"]["max_seq_len"] > sgd_minibatch_size
+        ):
+            raise ValueError(
+                "`sgd_minibatch_size` ({}) cannot be smaller than"
+                "`max_seq_len` ({}).".format(
+                    sgd_minibatch_size, policy.config["model"]["max_seq_len"]
+                )
+            )
+
+        kl_target = 0.01
+
         attr = {
             "num_sgd_iter": num_sgd_iter,
             "sgd_minibatch_size": sgd_minibatch_size,
             "total_batch_size": len(batch),
         }
-
-        kl_target = 0.01
 
         with tracer.start_as_current_span(
             f"custom_do_minibatch_sgd_{policy_id}", attributes=attr
@@ -159,7 +168,7 @@ def custom_do_minibatch_sgd(
                 avg_kl = np.mean(mb_kl)
                 if avg_kl > 1.5 * kl_target:
                     sgd_span.set_attribute("early_stopping_step", i)
-                    print(
+                    LOGGER.info(
                         f"Early stopping at step {i} due to reaching max kl: {avg_kl}"
                     )
                     break
@@ -168,257 +177,224 @@ def custom_do_minibatch_sgd(
     return learner_info
 
 
-class CustomTrainOneStep:
-    """Callable that improves the policy and updates workers.
+def custom_train_one_step(algorithm, train_batch, policies_to_train=None) -> Dict:
+    config = algorithm.config
+    workers = algorithm.workers
+    local_worker = workers.local_worker()
+    num_sgd_iter = config.get("num_sgd_iter", 1)
+    sgd_minibatch_size = config.get("sgd_minibatch_size", 0)
 
-    This should be used with the .for_each() operator. A tuple of the input
-    and learner stats will be returned.
+    learn_timer = algorithm._timers[LEARN_ON_BATCH_TIMER]
+    with learn_timer:
+        # Subsample minibatches (size=`sgd_minibatch_size`) from the
+        # train batch and loop through train batch `num_sgd_iter` times.
+        if num_sgd_iter > 1 or sgd_minibatch_size > 0:
+            info = custom_do_minibatch_sgd(
+                train_batch,
+                {
+                    pid: local_worker.get_policy(pid)
+                    for pid in policies_to_train
+                    or local_worker.get_policies_to_train(train_batch)
+                },
+                local_worker,
+                num_sgd_iter,
+                sgd_minibatch_size,
+                [],
+            )
+        # Single update step using train batch.
+        else:
+            info = local_worker.learn_on_batch(train_batch)
 
-    Examples:
-        >>> rollouts = ParallelRollouts(...)
-        >>> train_op = rollouts.for_each(CustomTrainOneStep(workers))
-        >>> print(next(train_op))  # This trains the policy on one batch.
-        SampleBatch(...), {"learner_stats": ...}
+    learn_timer.push_units_processed(train_batch.count)
+    algorithm._counters[NUM_ENV_STEPS_TRAINED] += train_batch.count
+    algorithm._counters[NUM_AGENT_STEPS_TRAINED] += train_batch.agent_steps()
 
-    Updates the STEPS_TRAINED_COUNTER counter and LEARNER_INFO field in the
-    local iterator context.
-    """
+    if algorithm.reward_estimators:
+        info[DEFAULT_POLICY_ID]["off_policy_estimation"] = {}
+        for name, estimator in algorithm.reward_estimators.items():
+            info[DEFAULT_POLICY_ID]["off_policy_estimation"][name] = estimator.train(
+                train_batch
+            )
+    return info
 
-    def __init__(
-        self,
-        workers: WorkerSet,
-        policies: List[PolicyID] = frozenset([]),
-        num_sgd_iter: int = 1,
-        sgd_minibatch_size: int = 0,
-    ):
-        self.workers = workers
-        self.local_worker = workers.local_worker()
-        self.policies = policies
-        self.num_sgd_iter = num_sgd_iter
-        self.sgd_minibatch_size = sgd_minibatch_size
 
-    def __call__(self, batch: SampleBatchType) -> (SampleBatchType, List[dict]):
-        _check_sample_batch_type(batch)
-        metrics = _get_shared_metrics()
-        learn_timer = metrics.timers[LEARN_ON_BATCH_TIMER]
-        with learn_timer:
-            # Subsample minibatches (size=`sgd_minibatch_size`) from the
-            # train batch and loop through train batch `num_sgd_iter` times.
-            if self.num_sgd_iter > 1 or self.sgd_minibatch_size > 0:
-                lw = self.workers.local_worker()
-                learner_info = custom_do_minibatch_sgd(
-                    batch,
-                    {
-                        pid: lw.get_policy(pid)
-                        for pid in self.policies or self.local_worker.policies_to_train
-                    },
-                    lw,
-                    self.num_sgd_iter,
-                    self.sgd_minibatch_size,
-                    [],
+class TracedPPO(PPO, ABC):
+    def training_step(self) -> ResultDict:
+        # Collect SampleBatches from sample workers until we have a full batch.
+        tracer = trace.get_tracer(__name__)
+
+        with tracer.start_as_current_span("synchronous_parallel_sample"):
+            if self._by_agent_steps:
+                train_batch = synchronous_parallel_sample(
+                    worker_set=self.workers,
+                    max_agent_steps=self.config["train_batch_size"],
                 )
-            # Single update step using train batch.
             else:
-                learner_info = self.workers.local_worker().learn_on_batch(batch)
+                train_batch = synchronous_parallel_sample(
+                    worker_set=self.workers,
+                    max_env_steps=self.config["train_batch_size"],
+                )
 
-            metrics.info[LEARNER_INFO] = learner_info
-            learn_timer.push_units_processed(batch.count)
-        metrics.counters[STEPS_TRAINED_COUNTER] += batch.count
-        if isinstance(batch, MultiAgentBatch):
-            metrics.counters[AGENT_STEPS_TRAINED_COUNTER] += batch.agent_steps()
+        train_batch = train_batch.as_multi_agent()
+        self._counters[NUM_AGENT_STEPS_SAMPLED] += train_batch.agent_steps()
+        self._counters[NUM_ENV_STEPS_SAMPLED] += train_batch.env_steps()
+
+        # Standardize advantages
+        with tracer.start_as_current_span("standardize_fields"):
+            train_batch = standardize_fields_fn(train_batch, ["advantages"])
+
+        with tracer.start_as_current_span("train_one_step"):
+            # Train
+            if self.config["simple_optimizer"]:
+                train_results = custom_train_one_step(self, train_batch)
+            else:
+                train_results = multi_gpu_train_one_step(self, train_batch)
+
+        global_vars = {
+            "timestep": self._counters[NUM_AGENT_STEPS_SAMPLED],
+        }
+
         # Update weights - after learning on the local worker - on all remote
         # workers.
-        if self.workers.remote_workers():
-            with metrics.timers[WORKER_UPDATE_TIMER]:
-                weights = ray.put(
-                    self.workers.local_worker().get_weights(
-                        self.policies or self.local_worker.policies_to_train
-                    )
-                )
-                for e in self.workers.remote_workers():
-                    e.set_weights.remote(weights, _get_global_vars())
-        # Also update global vars of the local worker.
-        self.workers.local_worker().set_global_vars(_get_global_vars())
-        return batch, learner_info
+        with tracer.start_as_current_span("sync_weights"):
+            if self.workers.remote_workers():
+                with self._timers[SYNCH_WORKER_WEIGHTS_TIMER]:
+                    self.workers.sync_weights(global_vars=global_vars)
 
+        # For each policy: update KL scale and warn about possible issues
+        for policy_id, policy_info in train_results.items():
+            # Update KL loss with dynamic scaling
+            # for each (possibly multiagent) policy we are training
+            kl_divergence = policy_info[LEARNER_STATS_KEY].get("kl")
+            self.get_policy(policy_id).update_kl(kl_divergence)
 
-def create_execution_plan(carrier: CarrierT):
-    def result_plan(
-        workers: WorkerSet, config: TrainerConfigDict
-    ) -> LocalIterator[dict]:
-        rollouts = TraceLocalIterator(
-            "rollout", carrier, ParallelRollouts(workers, mode="bulk_sync")
+            self._warn_if_excessively_high_value_function_loss(policy_id, policy_info)
+            self._warn_if_bad_clipping_config(policy_id, train_batch)
+
+        # Update global vars on local worker as well.
+        self.workers.local_worker().set_global_vars(global_vars)
+
+        return train_results
+
+    def _warn_if_excessively_high_value_function_loss(
+        self, policy_id: str, policy_info
+    ) -> None:
+        scaled_vf_loss = (
+            self.config["vf_loss_coeff"] * policy_info[LEARNER_STATS_KEY]["vf_loss"]
         )
-
-        # Collect batches for the trainable policies.
-        rollouts = rollouts.for_each(
-            TraceOps(
-                "select_experiences",
-                carrier,
-                SelectExperiences(workers.trainable_policies()),
-            )
-        )
-
-        # Concatenate the SampleBatches into one.
-        rollouts = rollouts.combine(
-            TraceOps(
-                "concat_batches",
-                carrier,
-                ConcatBatches(
-                    min_batch_size=config["train_batch_size"],
-                    count_steps_by=config["multiagent"]["count_steps_by"],
-                ),
-            )
-        )
-
-        # Standardize advantages.
-        rollouts = rollouts.for_each(
-            TraceOps("standardize_fields", carrier, StandardizeFields(["advantages"])),
-        )
-
-        # Perform one training step on the combined + standardized batch.
-        if not config["simple_optimizer"]:
-            raise NotImplementedError(
-                "haven't implemented training when simple optimizer is false"
+        policy_loss = policy_info[LEARNER_STATS_KEY]["policy_loss"]
+        if (
+            log_once("ppo_warned_lr_ratio")
+            and self.config.get("model", {}).get("vf_share_layers")
+            and scaled_vf_loss > 100
+        ):
+            LOGGER.warning(
+                "The magnitude of your value function loss for policy: {} is "
+                "extremely large ({}) compared to the policy loss ({}). This "
+                "can prevent the policy from learning. Consider scaling down "
+                "the VF loss by reducing vf_loss_coeff, or disabling "
+                "vf_share_layers.".format(policy_id, scaled_vf_loss, policy_loss)
             )
 
-        train_op = rollouts.for_each(
-            TraceOps(
-                "train_one_step",
-                carrier,
-                CustomTrainOneStep(
-                    workers,
-                    num_sgd_iter=config["num_sgd_iter"],
-                    sgd_minibatch_size=config["sgd_minibatch_size"],
-                ),
+    def _warn_if_bad_clipping_config(
+        self, policy_id: str, train_batch: Union[List[SampleBatchType], SampleBatchType]
+    ) -> None:
+        train_batch.policy_batches[policy_id].set_get_interceptor(None)
+        mean_reward = train_batch.policy_batches[policy_id]["rewards"].mean()
+        if (
+            log_once("ppo_warned_vf_clip")
+            and mean_reward > self.config["vf_clip_param"]
+        ):
+            self.warned_vf_clip = True
+            LOGGER.warning(
+                f"The mean reward returned from the environment is {mean_reward}"
+                f" but the vf_clip_param is set to {self.config['vf_clip_param']}."
+                f" Consider increasing it for policy: {policy_id} to improve"
+                " value function convergence."
             )
-        )
-
-        # Update KL after each round of training.
-        train_op = train_op.for_each(lambda t: t[1]).for_each(
-            TraceOps("update_kl", carrier, UpdateKL(workers))
-        )
-
-        # Warn about bad reward scales and return training metrics.
-        reporting = StandardMetricsReporting(train_op, workers, config).for_each(
-            lambda result: warn_about_bad_reward_scales(config, result)
-        )
-
-        return reporting
-
-    return result_plan
-
-
-def config_gpu():
-    gpus = tf.config.list_physical_devices("GPU")
-    if not gpus:
-        return
-
-    try:
-        # Currently, memory growth needs to be the same across GPUs
-        for gpu in gpus:
-            tf.config.experimental.set_memory_growth(gpu, True)
-    except RuntimeError as e:
-        # Memory growth must be set before GPUs have been initialized
-        print(e)
 
 
 def train_multi_agent():
-    config_gpu()
-
     shutdown()
     env_name = "bigtwo_v1"
 
-    def create_env(config):
-        return BigTwoMultiAgentEnv()
-
-    register_env(env_name, create_env)
+    register_env(env_name, lambda _: BigTwoMultiAgentEnv())
     ModelCatalog.register_custom_model("pa_model", ParametricActionsModel)
 
     test_env = BigTwoMultiAgentEnv()
-    gen_obs_space = test_env.observation_space
-    gen_act_space = test_env.action_space
 
-    def gen_policy(i):
-        config = {
-            "model": {
-                "custom_model": "pa_model",
+    default_policy_id = "policy_0"
+    bigtwo_policies = {
+        default_policy_id: (
+            None,
+            test_env.observation_space,
+            test_env.action_space,
+            {
+                "model": {
+                    "custom_model": "pa_model",
+                },
+                "gamma": 0.99,
             },
-            "gamma": 0.99,
-        }
-        return None, gen_obs_space, gen_act_space, config
-
-    bigtwo_policies = {"policy_0": gen_policy(0)}
-
-    policy_ids = list(bigtwo_policies.keys())
-    num_workers = 10
-
-    run_config = {
-        # Environment specific
-        "env": env_name,
-        # General
-        "callbacks": MultiCallbacks([CustomMetricCallback]),
-        "_disable_preprocessor_api": True,
-        "log_level": "ERROR",
-        "framework": "tf2",
-        "eager_tracing": True,
-        "num_gpus": 1,
-        "num_workers": 4,
-        # "num_gpus_per_worker": num_gpus_per_worker,
-        "num_envs_per_worker": 1,
-        "compress_observations": False,
-        "batch_mode": "truncate_episodes",
-        # 'use_critic': True,
-        "use_gae": True,
-        "lambda": 0.9,
-        "gamma": 0.99,
-        "kl_coeff": 0,
-        "kl_target": 0.01,
-        "clip_param": 0.3,
-        "grad_clip": None,
-        # "entropy_coeff": 0.1,
-        # "vf_loss_coeff": 0.25,
-        "sgd_minibatch_size": 512,
-        "num_sgd_iter": 80,  # epoch
-        "rollout_fragment_length": 512,
-        "train_batch_size": 4096,
-        "lr": 1e-04,
-        "clip_actions": True,
-        # Method specific
-        "multiagent": {
-            "policies": bigtwo_policies,
-            "policy_mapping_fn": (lambda agent_id: policy_ids[0]),
-        },
+        )
     }
 
-    tracer = trace.get_tracer(__name__)
-    with tracer.start_as_current_span("ppo training"):
-        carrier = {}
-        trace_propagator.inject(carrier=carrier)
-
-        CustomPPOTrainer = build_trainer(
-            name="CustomPPO",
-            default_config=DEFAULT_CONFIG,
-            validate_config=validate_config,
-            default_policy=PPOTFPolicy,
-            get_policy_class=get_policy_class,
-            execution_plan=create_execution_plan(carrier=carrier),
+    ppo_config = (
+        PPOConfig()
+        .environment(env=env_name)
+        .framework(framework="tf2", eager_tracing=True)
+        .resources(num_gpus=1)
+        .experimental(_disable_preprocessor_api=True)
+        .multi_agent(
+            policies=bigtwo_policies,
+            policy_mapping_fn=lambda agent_id: default_policy_id,
         )
+        .rollouts(
+            num_rollout_workers=4,
+            num_envs_per_worker=1,
+            batch_mode="truncate_episodes",
+            compress_observations=True,
+            rollout_fragment_length=512,
+        )
+        .callbacks(MultiCallbacks([CustomMetricCallback]))
+        .training(
+            lr=0.0001,
+            use_gae=True,
+            gamma=0.99,
+            lambda_=0.9,
+            kl_coeff=0.2,
+            kl_target=0.01,
+            sgd_minibatch_size=512,
+            num_sgd_iter=30,
+            train_batch_size=4096,
+            clip_param=0.3,
+            grad_clip=None,
+        )
+        .debugging(log_level="INFO")
+    )
 
-        start_time = time.time()
-        # ray.init(_tracing_startup_hook="ray_custom_util:setup_tracing")
+    ray.init(_tracing_startup_hook="ray_custom_util:setup_tracing")
+    tracer = trace.get_tracer(__name__)
+    with tracer.start_as_current_span("ppo_training"):
         _ = tune.run(
-            CustomPPOTrainer,
-            name="CustomPPO",
-            stop={"timesteps_total": 4000},
+            TracedPPO,
+            name="TracedPPO",
+            stop={"timesteps_total": 41000},
             checkpoint_freq=100,
-            local_dir="./results/" + env_name,
-            config=run_config,
+            local_dir="./temp_results/" + env_name,
+            config={
+                **ppo_config.to_dict(),
+            },
             checkpoint_at_end=True,
         )
 
-    print(start_time)
-    print(time.time() - start_time)
+        # _ = tune.run(
+        #     "PPO",
+        #     stop={"timesteps_total": 41000},
+        #     checkpoint_freq=100,
+        #     local_dir="./temp_results/" + env_name,
+        #     config={**ppo_config.to_dict()},
+        #     checkpoint_at_end=True,
+        # )
 
 
 if __name__ == "__main__":
