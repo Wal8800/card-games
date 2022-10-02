@@ -154,24 +154,25 @@ def custom_do_minibatch_sgd(
             f"custom_do_minibatch_sgd_{policy_id}", attributes=attr
         ) as sgd_span:
             for i in range(num_sgd_iter):
-                mb_kl = []
-                for minibatch in minibatches(batch, sgd_minibatch_size):
-                    results = (
-                        local_worker.learn_on_batch(
-                            MultiAgentBatch({policy_id: minibatch}, minibatch.count)
+                with tracer.start_as_current_span(f"iter_{i}"):
+                    mb_kl = []
+                    for minibatch in minibatches(batch, sgd_minibatch_size):
+                        results = (
+                            local_worker.learn_on_batch(
+                                MultiAgentBatch({policy_id: minibatch}, minibatch.count)
+                            )
+                        )[policy_id]
+                        learner_info_builder.add_learn_on_batch_results(results, policy_id)
+
+                        mb_kl.append(results["learner_stats"]["kl"])
+
+                    avg_kl = np.mean(mb_kl)
+                    if avg_kl > 1.5 * kl_target:
+                        sgd_span.set_attribute("early_stopping_step", i)
+                        LOGGER.info(
+                            f"Early stopping at step {i} due to reaching max kl: {avg_kl}"
                         )
-                    )[policy_id]
-                    learner_info_builder.add_learn_on_batch_results(results, policy_id)
-
-                    mb_kl.append(results["learner_stats"]["kl"])
-
-                avg_kl = np.mean(mb_kl)
-                if avg_kl > 1.5 * kl_target:
-                    sgd_span.set_attribute("early_stopping_step", i)
-                    LOGGER.info(
-                        f"Early stopping at step {i} due to reaching max kl: {avg_kl}"
-                    )
-                    break
+                        break
 
     learner_info = learner_info_builder.finalize()
     return learner_info
@@ -379,22 +380,11 @@ def train_multi_agent():
             TracedPPO,
             name="TracedPPO",
             stop={"timesteps_total": 41000},
-            checkpoint_freq=100,
+            checkpoint_freq=10000,
             local_dir="./temp_results/" + env_name,
-            config={
-                **ppo_config.to_dict(),
-            },
+            config=ppo_config.to_dict(),
             checkpoint_at_end=True,
         )
-
-        # _ = tune.run(
-        #     "PPO",
-        #     stop={"timesteps_total": 41000},
-        #     checkpoint_freq=100,
-        #     local_dir="./temp_results/" + env_name,
-        #     config={**ppo_config.to_dict()},
-        #     checkpoint_at_end=True,
-        # )
 
 
 if __name__ == "__main__":

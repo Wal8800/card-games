@@ -131,7 +131,7 @@ def create_bots():
     ray_agent = config.build(env=env_name)
     ray_agent.restore(
         "/home/wal8800/workspace/card-games/ray_runner/"
-        "temp_results/bigtwo_v1/TracedPPO/TracedPPO_bigtwo_v1_bf2ab_00000_0_2022-09-25_15-21-25/checkpoint_000011/checkpoint-11"
+        "results/bigtwo_v1/TracedPPO/TracedPPO_bigtwo_v1_67fef_00000_0_2022-09-28_21-49-04/checkpoint_010000/checkpoint-10000"
     )
 
     ppo_bot = build_bot(
@@ -194,7 +194,7 @@ def run_multi_agent_env_bench_mark():
 
 
 if __name__ == "__main__":
-    # Run the benchmark only because can't run that many games at the same time with a single GPU.
+    # Run the benchmark CPU only because I can't run that many games at the same time with a single GPU.
     run_multi_agent_env_bench_mark()
 
     """
