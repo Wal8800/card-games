@@ -15,6 +15,7 @@ import time
 import tracemalloc
 from dataclasses import dataclass, asdict
 from datetime import datetime
+from enum import Enum
 from multiprocessing import Queue, Process
 from pstats import SortKey
 from typing import Dict, List, Tuple, Any
@@ -28,7 +29,13 @@ from pympler import summary, muppy
 
 from algorithm.agent import PPOBufferInterface
 from bigtwo.bigtwo import BigTwo, BigTwoObservation, BigTwoHand
-from gamerunner.ppo_bot import SimplePPOBot, GameBuffer, PlayerBuffer
+from gamerunner.ppo_bot import (
+    SimplePPOBot,
+    GameBuffer,
+    PlayerBuffer,
+    PastCardsPlayedBot,
+    SavedSimplePPOBot,
+)
 from playingcards.card import Card
 
 FORMATTER = logging.Formatter("%(asctime)s — %(name)s — %(levelname)s — %(message)s")
@@ -67,6 +74,41 @@ def create_player_rew_buf(num_of_player=4) -> Dict[int, List[int]]:
     return {i: [] for i in range(num_of_player)}
 
 
+class BotType(Enum):
+    SIMPLE_PPO_BOT = "SimplePPOBot"
+    LSTM_PPO_BOT = "LSTMPPOBot"
+
+
+def bot_type_from_str(value: str) -> BotType:
+    for enum_value in BotType:
+        if enum_value.value == value:
+            return enum_value
+
+    raise ValueError(f"Input value ({value}) doesn't match with any bot type enum")
+
+
+class BotBuilder:
+    @staticmethod
+    def create_training_bot(bot_type: BotType, *args, **kwargs):
+        if bot_type == BotType.SIMPLE_PPO_BOT:
+            return SimplePPOBot(*args, **kwargs)
+
+        raise ValueError("Unexpected bot type")
+
+    @staticmethod
+    def create_testing_bot(bot_type: BotType, *args, **kwargs):
+        if bot_type == BotType.SIMPLE_PPO_BOT:
+            return SavedSimplePPOBot(*args, **kwargs)
+
+        raise ValueError("Unexpected bot type")
+
+    @staticmethod
+    def create_testing_bot_by_str(value: str, *args, **kwargs):
+        bot_type = bot_type_from_str(value)
+
+        return BotBuilder.create_testing_bot(bot_type, *args, **kwargs)
+
+
 @dataclass
 class ExperimentConfig:
     epoch: int = 20000
@@ -84,10 +126,6 @@ class ExperimentConfig:
     bot_class = SimplePPOBot
     game_buf_class = GameBuffer
     player_buf_class = PlayerBuffer
-
-    # bot_class = EmbeddedInputBot
-    # game_buf_class = MultiInputGameBuffer
-    # player_buf_class = MultiInputPlayerBuffer
 
 
 class SampleMetric:
@@ -510,7 +548,7 @@ class ExperimentLogger:
 
     def flush_config(self, config: ExperimentConfig):
         data = asdict(config)
-        data["bot_class_name"] = config.bot_class.__name__
+        data["bot_type"] = config.bot_class.__name__
         # As we are using all scalar values, we need to pass an index
         # wrapping the dict in a list means the index of the values is 0
 
@@ -725,5 +763,10 @@ def train_parallel(config: ExperimentConfig):
 
 if __name__ == "__main__":
     config_gpu()
+<<<<<<< HEAD
+=======
+
+    BotBuilder.create_testing_bot(BotType.SIMPLE_PPO_BOT)
+>>>>>>> Client able to create bot without specifying the class
     # train()
     # train_parallel(ExperimentConfig())
