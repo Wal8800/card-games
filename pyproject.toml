@@ -2,7 +2,7 @@
 name = "card-games"
 version = "0.1.0"
 description = ""
-authors = ["John Law <8260377+Wal8800@users.noreply.github.com>"]
+authors = ["<8260377+Wal8800@users.noreply.github.com>"]
 
 [tool.poetry.dependencies]
 python = "==3.8"
@@ -17,7 +17,7 @@ tensorflow-probability = "==0.17.0"
 opentelemetry-api = "^1.12.0"
 opentelemetry-sdk = "^1.12.0"
 opentelemetry-exporter-jaeger = "^1.12.0"
-Pillow = "==8.4.0"
+Pillow = "==9.0.1"
 ray = {version = "2.0", extras = ["rllib"]}
 tqdm = "^4.64.1"
 scikit-image = "^0.19.3"
