@@ -8,7 +8,8 @@ This repository contain codes to train to play card games through reinforcement 
 - `benchmark` contains logic to pitch different bots against each other to see who is the best
 - `bigtwo` contains logic to play the [big two card game](https://en.wikipedia.org/wiki/Big_two)
 - `bigtwo_client` contains logic to open up a GUI application to play bigtwo against the bots
-- `gamerunner` contains logic to train the bots
+- `gamerunner` contains logic to train the bots using self implemented PPO training code
+- `rayrunner` contains logic to train the bots using Ray RLlib
 - `playingcards` contains logic to represent playing cards
 
 ### Installing dependencies
@@ -33,18 +34,6 @@ Training configuration is stored in `gamerunner/config``
 ```
 cd gamerunner
 PYTHONPATH=.. python ppo_runner.py
-```
-
-or if you have [nvidia-docker](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/install-guide.html#docker) installed, you can use docker to run the training
-
-```
-docker build -t card-game-runner:$(git rev-parse --short HEAD) .
-docker run --rm --gpus all -v $(pwd):/card-games -e PYTHONPATH=.. -it card-game-runner:$(git rev-parse --short HEAD) bash
-
-docker run --rm --gpus all -v $(pwd):/card-games -e PYTHONPATH=.. -it ray-runner:$(git rev-parse --short HEAD) bash
-
-# cd /card-games/gamerunner
-python ppo_runner.py
 ```
 
 ### Run tests
