@@ -368,7 +368,6 @@ def train_multi_agent():
             num_sgd_iter=30,
             train_batch_size=4096,
             clip_param=0.3,
-            grad_clip=None,
         )
         .debugging(log_level="INFO")
     )
