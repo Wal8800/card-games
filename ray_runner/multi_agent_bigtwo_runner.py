@@ -1,6 +1,6 @@
 import logging
 from abc import ABC
-from typing import List, Dict, Union
+from typing import Dict, List, Union
 
 import numpy as np
 import ray
@@ -11,13 +11,8 @@ from ray import shutdown, tune
 from ray.rllib.algorithms.callbacks import MultiCallbacks
 from ray.rllib.algorithms.ppo import PPOConfig
 from ray.rllib.algorithms.ppo.ppo import PPO
-from ray.rllib.execution import (
-    synchronous_parallel_sample,
-    train_one_step,
-)
-from ray.rllib.execution.common import (
-    LEARN_ON_BATCH_TIMER,
-)
+from ray.rllib.execution import synchronous_parallel_sample, train_one_step
+from ray.rllib.execution.common import LEARN_ON_BATCH_TIMER
 from ray.rllib.execution.rollout_ops import standardize_fields as standardize_fields_fn
 from ray.rllib.execution.train_ops import multi_gpu_train_one_step
 from ray.rllib.models import ModelCatalog
@@ -26,28 +21,19 @@ from ray.rllib.models.tf.tf_modelv2 import TFModelV2
 from ray.rllib.policy.sample_batch import DEFAULT_POLICY_ID, MultiAgentBatch
 from ray.rllib.utils.metrics import (
     NUM_AGENT_STEPS_SAMPLED,
-    NUM_ENV_STEPS_SAMPLED,
-    SYNCH_WORKER_WEIGHTS_TIMER,
-    NUM_ENV_STEPS_TRAINED,
     NUM_AGENT_STEPS_TRAINED,
+    NUM_ENV_STEPS_SAMPLED,
+    NUM_ENV_STEPS_TRAINED,
+    SYNCH_WORKER_WEIGHTS_TIMER,
 )
-from ray.rllib.utils.metrics.learner_info import (
-    LearnerInfoBuilder,
-    LEARNER_STATS_KEY,
-)
+from ray.rllib.utils.metrics.learner_info import LEARNER_STATS_KEY, LearnerInfoBuilder
 from ray.rllib.utils.sgd import minibatches, standardized
-from ray.rllib.utils.typing import (
-    SampleBatchType,
-    TensorType,
-    ResultDict,
-)
+from ray.rllib.utils.typing import ResultDict, SampleBatchType, TensorType
 from ray.tune.registry import register_env
 from ray.util import log_once
 
 from ray_runner.bigtwo_multi_agent import BigTwoMultiAgentEnv
-from ray_runner.ray_custom_util import (
-    CustomMetricCallback,
-)
+from ray_runner.ray_custom_util import CustomMetricCallback
 
 TRACE_PROPAGATOR = TraceContextTextMapPropagator()
 LOGGER = logging.getLogger(__name__)
@@ -162,7 +148,9 @@ def custom_do_minibatch_sgd(
                                 MultiAgentBatch({policy_id: minibatch}, minibatch.count)
                             )
                         )[policy_id]
-                        learner_info_builder.add_learn_on_batch_results(results, policy_id)
+                        learner_info_builder.add_learn_on_batch_results(
+                            results, policy_id
+                        )
 
                         mb_kl.append(results["learner_stats"]["kl"])
 

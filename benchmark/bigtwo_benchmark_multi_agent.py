@@ -2,13 +2,11 @@ import copy
 import itertools
 import pickle
 import traceback
-
-import tensorflow as tf
-
 from collections import Counter
 from multiprocessing import Process, Queue
 from typing import Any, Callable, Dict, List
 
+import tensorflow as tf
 from ray.rllib.algorithms.ppo import PPOConfig
 from ray.rllib.models import ModelCatalog
 from ray.tune import register_env

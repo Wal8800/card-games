@@ -1,10 +1,9 @@
 import abc
-from collections import Mapping
+from collections.abc import Mapping
 
 import numpy as np
-import scipy.signal
 import tensorflow as tf
-import tensorflow.keras as keras
+from scipy import signal
 from tensorflow.keras import layers, models, optimizers
 from tensorflow_probability import distributions as tfd
 
@@ -19,7 +18,7 @@ def discounted_sum_of_rewards(rewards, gamma):
       0.99^0 * 3
     ]
     """
-    return scipy.signal.lfilter([1], [1, float(-gamma)], rewards[::-1], axis=0)[::-1]
+    return signal.lfilter([1], [1, float(-gamma)], rewards[::-1], axis=0)[::-1]
 
 
 # Buffer to store tracjectories and calculate the Generalized advantage estimation
@@ -100,9 +99,9 @@ class VPGAgent:
         x = layers.Dense(64, activation="relu")(value_input)
         x = layers.Dense(64, activation="relu")(x)
         value_output = layers.Dense(1)(x)
-        self.value_function = keras.Model(inputs=value_input, outputs=value_output)
+        self.value_function = tf.keras.Model(inputs=value_input, outputs=value_output)
         self.value_function.compile(
-            optimizer=optimizers.Adam(0.01), loss=keras.losses.MeanSquaredError()
+            optimizer=optimizers.Adam(0.01), loss=tf.keras.losses.MeanSquaredError()
         )
 
     def action(self, observation):
@@ -253,8 +252,8 @@ class PPOAgent:
 
     def __init__(
         self,
-        policy_network: keras.Model,
-        vf_network: keras.Model,
+        policy_network: tf.keras.Model,
+        vf_network: tf.keras.Model,
         env_name: str,
         n_action: int,
         dir_path: str = None,
@@ -280,7 +279,7 @@ class PPOAgent:
 
         self.vf = vf_network
         self.vf.compile(
-            optimizer=optimizers.Adam(value_lr), loss=keras.losses.MeanSquaredError()
+            optimizer=optimizers.Adam(value_lr), loss=tf.keras.losses.MeanSquaredError()
         )
 
     def action(self, obs, mask=None):
@@ -450,7 +449,7 @@ class PPOAgent:
         self.vf.set_weights(value_weights)
 
 
-class VanillaPG(keras.Model):
+class VanillaPG(tf.keras.Model):
     def train_step(self, data):
         batch_obs, batch_acts, batch_weights = data
 
@@ -472,25 +471,25 @@ class VanillaPG(keras.Model):
         return {"loss": loss}
 
 
-def get_mlp_policy(obs_shape, act_dim, hidden_units=64) -> keras.Model:
+def get_mlp_policy(obs_shape, act_dim, hidden_units=64) -> tf.keras.Model:
     obs_inp = layers.Input(shape=obs_shape, name="obs")
     x = layers.Dense(hidden_units, activation="relu")(obs_inp)
     x = layers.Dense(hidden_units, activation="relu")(x)
     output = layers.Dense(act_dim)(x)
 
-    return keras.Model(inputs=obs_inp, outputs=output)
+    return tf.keras.Model(inputs=obs_inp, outputs=output)
 
 
-def get_mlp_vf(obs_shape, hidden_units=64) -> keras.Model:
+def get_mlp_vf(obs_shape, hidden_units=64) -> tf.keras.Model:
     obs_inp = layers.Input(shape=obs_shape, name="obs")
     x = layers.Dense(hidden_units, activation="relu")(obs_inp)
     x = layers.Dense(hidden_units, activation="relu")(x)
     output = layers.Dense(1)(x)
 
-    return keras.Model(inputs=obs_inp, outputs=output)
+    return tf.keras.Model(inputs=obs_inp, outputs=output)
 
 
-def get_2d_conv_policy(obs_shape, act_dim) -> keras.Model:
+def get_2d_conv_policy(obs_shape, act_dim) -> tf.keras.Model:
     obs_inp = layers.Input(shape=obs_shape, name="obs")
     x = layers.Conv2D(32, kernel_size=(3, 3), activation="relu")(obs_inp)
     x = layers.MaxPooling2D(pool_size=(2, 2))(x)
@@ -500,10 +499,10 @@ def get_2d_conv_policy(obs_shape, act_dim) -> keras.Model:
     x = layers.Dropout(0.5)(x)
     output = layers.Dense(act_dim)(x)
 
-    return keras.Model(inputs=obs_inp, outputs=output)
+    return tf.keras.Model(inputs=obs_inp, outputs=output)
 
 
-def get_2d_conv_vf(obs_shape) -> keras.Model:
+def get_2d_conv_vf(obs_shape) -> tf.keras.Model:
     obs_inp = layers.Input(shape=obs_shape, name="obs")
     x = layers.Conv2D(32, kernel_size=(3, 3), activation="relu")(obs_inp)
     x = layers.MaxPooling2D(pool_size=(2, 2))(x)
@@ -513,10 +512,10 @@ def get_2d_conv_vf(obs_shape) -> keras.Model:
     x = layers.Dropout(0.5)(x)
     output = layers.Dense(1)(x)
 
-    return keras.Model(inputs=obs_inp, outputs=output)
+    return tf.keras.Model(inputs=obs_inp, outputs=output)
 
 
-def get_mlp_lstm_policy(obs_shape, act_dim) -> keras.Model:
+def get_mlp_lstm_policy(obs_shape, act_dim) -> tf.keras.Model:
     """
     :param obs_shape: [timesteps, feature]
     :param act_dim:
@@ -526,10 +525,10 @@ def get_mlp_lstm_policy(obs_shape, act_dim) -> keras.Model:
     x = layers.LSTM(10)(obs_inp)
     x = layers.Dense(64, activation="relu")(x)
     output = layers.Dense(act_dim)(x)
-    return keras.Model(inputs=obs_inp, outputs=output)
+    return tf.keras.Model(inputs=obs_inp, outputs=output)
 
 
-def get_mlp_lstm_value(obs_shape) -> keras.Model:
+def get_mlp_lstm_value(obs_shape) -> tf.keras.Model:
     """
     :param obs_shape: [timesteps, feature]
     :param act_dim:
@@ -539,4 +538,4 @@ def get_mlp_lstm_value(obs_shape) -> keras.Model:
     x = layers.LSTM(10)(obs_inp)
     x = layers.Dense(64, activation="relu")(x)
     output = layers.Dense(1)(x)
-    return keras.Model(inputs=obs_inp, outputs=output)
+    return tf.keras.Model(inputs=obs_inp, outputs=output)
