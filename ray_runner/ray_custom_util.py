@@ -15,9 +15,6 @@ from ray.rllib.utils.typing import PolicyID
 
 from ray_runner.bigtwo_multi_agent import BigTwoMultiAgentEnv
 
-T = TypeVar("T")
-U = TypeVar("U")
-
 
 def setup_tracing() -> None:
     resource = Resource(attributes={SERVICE_NAME: "rayrunner"})

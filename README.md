@@ -1,5 +1,7 @@
 # Card games
 
+[![Code style: black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
+
 This repository contain codes to train to play card games through reinforcement learning.
 
 ### Folder structure
@@ -16,9 +18,6 @@ This repository contain codes to train to play card games through reinforcement 
 
 First [poetry](https://python-poetry.org/), then run `poetry install`
 
-### Formatter
-
-We use the [black code formatter](https://github.com/psf/black)
 
 ### Run BigTwo GUI client
 

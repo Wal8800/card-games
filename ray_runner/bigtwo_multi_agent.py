@@ -1,4 +1,3 @@
-import itertools
 import typing
 from typing import List, Tuple
 
@@ -18,6 +17,7 @@ from bigtwo.preprocessing import (
 
 class BigTwoMultiAgentEnv(MultiAgentEnv):
     def __init__(self, hands: typing.Optional[List[BigTwoHand]] = None):
+        super().__init__()
         self.base_env = BigTwo(hands)
 
         self.cat_to_raw_action, self.raw_action_idx_to_cat = create_action_cat_mapping()
