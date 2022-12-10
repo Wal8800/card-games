@@ -333,14 +333,14 @@ class TestBigTwo(unittest.TestCase):
             Card(Suit.spades, Rank.king),
         ]
 
-        self.assertEqual(BigTwo.get_five_card_type(straight), BigTwo.STRAIGHT)
-        self.assertEqual(BigTwo.get_five_card_type(flush), BigTwo.FLUSH)
+        self.assertEqual(BigTwo.get_combination_type(straight), BigTwo.STRAIGHT)
+        self.assertEqual(BigTwo.get_combination_type(flush), BigTwo.FLUSH)
         self.assertEqual(
-            BigTwo.get_five_card_type(four_of_a_kind), BigTwo.FOUR_OF_A_KIND
+            BigTwo.get_combination_type(four_of_a_kind), BigTwo.FOUR_OF_A_KIND
         )
-        self.assertEqual(BigTwo.get_five_card_type(full_house), BigTwo.FULL_HOUSE)
+        self.assertEqual(BigTwo.get_combination_type(full_house), BigTwo.FULL_HOUSE)
         self.assertEqual(
-            BigTwo.get_five_card_type(straight_flush), BigTwo.STRAIGHT_FLUSH
+            BigTwo.get_combination_type(straight_flush), BigTwo.STRAIGHT_FLUSH
         )
 
     def test_get_five_card_type_err(self):
@@ -352,7 +352,7 @@ class TestBigTwo(unittest.TestCase):
             Card(Suit.spades, Rank.two),
         ]
 
-        self.assertRaises(ValueError, BigTwo.get_five_card_type, hand)
+        self.assertRaises(ValueError, BigTwo.get_combination_type, hand)
 
     def test_is_valid_card_combination_single(self):
         ace = Card(Suit.spades, Rank.ace)

@@ -3,6 +3,7 @@ import typing
 from typing import List, Tuple
 
 import numpy as np
+import numpy.typing as npt
 
 from bigtwo.bigtwo import BigTwo, BigTwoHand, BigTwoObservation
 from playingcards.card import Card, Rank, Suit
@@ -156,7 +157,7 @@ def obs_to_ohe(obs: BigTwoObservation, include_last_cards_played=True) -> np.nda
 def generate_action_mask_first_turn(
     idx_cat_mapping,
     obs: BigTwoObservation,
-) -> np.array:
+) -> npt.NDArray:
     result = np.full(len(idx_cat_mapping) + 1, False)
 
     diamond_three = Card(Suit.diamond, Rank.three)
@@ -233,7 +234,7 @@ def generate_pair_options(
 
     card_idx_mapping = {hands[idx]: idx for idx in range(len(hands))}
     return [
-        [card_idx_mapping.get(card) for card in pair]
+        [card_idx_mapping[card] for card in pair]
         for pair in hands.pairs
         if BigTwo.is_bigger(list(pair), target_to_beat)
     ]
@@ -257,7 +258,7 @@ def generate_combinations_options(
             if not BigTwo.is_bigger(comb, target_to_beat):
                 continue
 
-            comb_idx = [card_idx_mapping.get(card) for card in comb]
+            comb_idx = [card_idx_mapping[card] for card in comb]
             combination_options.append(comb_idx)
     return combination_options
 
@@ -265,7 +266,7 @@ def generate_combinations_options(
 def generate_action_mask(
     idx_cat_mapping,
     obs: BigTwoObservation,
-) -> np.array:
+) -> npt.NDArray:
     if obs.is_first_turn():
         return generate_action_mask_first_turn(idx_cat_mapping, obs)
 

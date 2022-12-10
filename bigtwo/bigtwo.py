@@ -1,9 +1,11 @@
 import itertools
 from collections import Counter
 from collections.abc import MutableSequence
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple, Sequence
 
 from playingcards.card import Card, Deck, Rank, Suit
+
+NUM_OF_CARD_FOR_COMBINATIONS = 5
 
 STRAIGHT_RANK_ORDER = {
     Rank.ace: 1,
@@ -40,41 +42,37 @@ RANK_ORDER = {
 SUIT_ORDER = {Suit.diamond: 1, Suit.clubs: 2, Suit.hearts: 3, Suit.spades: 4}
 
 
-def have_diamond_three(hand):
-    for card in hand:
-        if card.suit == Suit.diamond and card.rank == Rank.three:
-            return True
-
-    return False
+def have_diamond_three(hand: list[Card]) -> bool:
+    return any((card.suit == Suit.diamond and card.rank == Rank.three for card in hand))
 
 
-def find_combinations_from_cards(input_cards: List[Card]):
+def find_combinations_from_cards(input_cards: list[Card]):
     """
-    rank_map
+    Use cards_group_by_rank to find the following
         - FOUR OF A KIND
         - FULL HOUSE
         - STRAIGHT
-    suit_map
+    Use cards_group_by_suit to find the following
         - flush
         - straight flush
     """
-    rank_map: Dict[Rank, List[Card]] = {}
-    suit_map: Dict[Suit, List[Card]] = {}
+    cards_group_by_rank: Dict[Rank, list[Card]] = {}
+    cards_group_by_suit: Dict[Suit, list[Card]] = {}
 
     straight_flush_set = set()
 
     for card in input_cards:
-        rank_vals = rank_map.get(card.rank, [])
+        rank_vals = cards_group_by_rank.get(card.rank, [])
         rank_vals.append(card)
-        rank_map[card.rank] = rank_vals
+        cards_group_by_rank[card.rank] = rank_vals
 
-        suit_vals = suit_map.get(card.suit, [])
+        suit_vals = cards_group_by_suit.get(card.suit, [])
         suit_vals.append(card)
-        suit_map[card.suit] = suit_vals
+        cards_group_by_suit[card.suit] = suit_vals
 
-    combinations: Dict[int, List[Tuple[Card]]] = {}
-    for _, cards in suit_map.items():
-        if len(cards) < 5:
+    combinations: Dict[int, List[Tuple[Card, Card, Card, Card, Card]]] = {}
+    for _, cards in cards_group_by_suit.items():
+        if len(cards) < NUM_OF_CARD_FOR_COMBINATIONS:
             continue
 
         for flush in itertools.combinations(cards, 5):
@@ -87,39 +85,40 @@ def find_combinations_from_cards(input_cards: List[Card]):
             current_list.append(flush)
             combinations[c_type] = current_list
 
-    for rank, cards in rank_map.items():
+    for rank, cards in cards_group_by_rank.items():
         if len(cards) < 3:
             continue
 
         if len(cards) == 3:
-            full_house = build_full_house_combinations(cards, rank, rank_map)
+            full_house = build_full_house_combinations(
+                (cards[0], cards[1], cards[2]), rank, cards_group_by_rank
+            )
             current_list = combinations.get(BigTwo.FULL_HOUSE, []) + full_house
             combinations[BigTwo.FULL_HOUSE] = current_list
             continue
 
         # have all 4 cards
         # first create four of a kind
-        for card in input_cards:
-            if card.rank == rank:
-                continue
-
-            four_of_a_kind = cards + [card]
+        for single_card in filter(lambda c: c.rank != rank, input_cards):
+            four_of_a_kind = (cards[0], cards[1], cards[2], cards[3], single_card)
             current_list = combinations.get(BigTwo.FOUR_OF_A_KIND, [])
-            current_list.append(tuple(four_of_a_kind))
+            current_list.append(four_of_a_kind)
             combinations[BigTwo.FOUR_OF_A_KIND] = current_list
 
         # then build full house
         for three_of_kind in itertools.combinations(cards, 3):
             full_house = build_full_house_combinations(
-                list(three_of_kind), rank, rank_map
+                three_of_kind, rank, cards_group_by_rank
             )
             current_list = combinations.get(BigTwo.FULL_HOUSE, []) + full_house
             combinations[BigTwo.FULL_HOUSE] = current_list
 
-    sorted_ranks = sorted(list(rank_map.keys()), key=lambda r: STRAIGHT_RANK_ORDER[r])
+    sorted_ranks = sorted(
+        list(cards_group_by_rank.keys()), key=lambda r: STRAIGHT_RANK_ORDER[r]
+    )
 
-    if len(sorted_ranks) < 5:
-        # can't have straight if we don't have at least 5 unique rank
+    if len(sorted_ranks) < NUM_OF_CARD_FOR_COMBINATIONS:
+        # can't have straight if we don't have at least 5 unique ranks
         return combinations
 
     # scrolling window of 5 cards to check for straights
@@ -131,27 +130,31 @@ def find_combinations_from_cards(input_cards: List[Card]):
         if STRAIGHT_RANK_ORDER[first_rank] + 4 != STRAIGHT_RANK_ORDER[last_rank]:
             continue
 
-        list_of_rank_cards = [rank_map[rank] for rank in sorted_ranks[i : i + 5]]
+        list_of_rank_cards = [
+            cards_group_by_rank[rank] for rank in sorted_ranks[i : i + 5]
+        ]
 
-        straights = list(itertools.product(*list_of_rank_cards))
-        straights = [s for s in straights if frozenset(s) not in straight_flush_set]
+        straights = itertools.product(*list_of_rank_cards)
+        straights = [s for s in straights if frozenset(s) not in straight_flush_set]  # type: ignore[assignment]
 
-        current_list = combinations.get(BigTwo.STRAIGHT, []) + straights
+        current_list = combinations.get(BigTwo.STRAIGHT, []) + straights  # type: ignore[operator]
         combinations[BigTwo.STRAIGHT] = current_list
 
     # check for special case ten to ace straight
     if sorted_ranks[-4] == Rank.ten and sorted_ranks[0] == Rank.ace:
         list_of_rank_cards = [
-            rank_map[Rank.ten],
-            rank_map[Rank.jack],
-            rank_map[Rank.queen],
-            rank_map[Rank.king],
-            rank_map[Rank.ace],
+            cards_group_by_rank[Rank.ten],
+            cards_group_by_rank[Rank.jack],
+            cards_group_by_rank[Rank.queen],
+            cards_group_by_rank[Rank.king],
+            cards_group_by_rank[Rank.ace],
         ]
-        straights = itertools.product(*list_of_rank_cards)
-        straights = [s for s in straights if frozenset(s) not in straight_flush_set]
+        straights_with_ace = itertools.product(*list_of_rank_cards)
+        straights_with_ace = [
+            s for s in straights_with_ace if frozenset(s) not in straight_flush_set
+        ]  # type: ignore[assignment]
 
-        current_list = combinations.get(BigTwo.STRAIGHT, []) + straights
+        current_list = combinations.get(BigTwo.STRAIGHT, []) + straights_with_ace  # type: ignore[operator]
         combinations[BigTwo.STRAIGHT] = current_list
 
     if BigTwo.STRAIGHT in combinations and len(combinations[BigTwo.STRAIGHT]) == 0:
@@ -161,8 +164,10 @@ def find_combinations_from_cards(input_cards: List[Card]):
 
 
 def build_full_house_combinations(
-    three_of_a_kinds: List[Card], three_rank: Rank, rank_map: Dict[Rank, List[Card]]
-):
+    three_of_a_kinds: tuple[Card, Card, Card],
+    three_rank: Rank,
+    rank_map: Dict[Rank, List[Card]],
+) -> List[Tuple[Card, Card, Card, Card, Card]]:
     result = []
     for pair_rank, pair_cards in rank_map.items():
         # need at least 2 cards
@@ -174,19 +179,19 @@ def build_full_house_combinations(
             continue
 
         for full_house_pair in itertools.combinations(pair_cards, 2):
-            full_house = three_of_a_kinds + list(full_house_pair)
-            result.append(tuple(full_house))
+            full_house = three_of_a_kinds + full_house_pair
+            result.append(full_house)
 
     return result
 
 
 def bf_find_combinations_from_cards(
     input_cards: List[Card],
-) -> Dict[int, List[Tuple[Card]]]:
-    combinations: Dict[int, List[Tuple[Card]]] = {}
+) -> Dict[int, List[Tuple[Card, Card, Card, Card, Card]]]:
+    combinations: Dict[int, List[Tuple[Card, Card, Card, Card, Card]]] = {}
     for combination in itertools.combinations(input_cards, 5):
         try:
-            c_type = BigTwo.get_five_card_type(list(combination))
+            c_type = BigTwo.get_combination_type(list(combination))
 
             current_list = combinations.get(c_type, [])
             current_list.append(combination)
@@ -199,24 +204,25 @@ def bf_find_combinations_from_cards(
 
 class BigTwoHand(MutableSequence):
     def __init__(self, cards: List[Card]):
+        super().__init__()
+
         self.cards = cards
-        self.pairs: List[Tuple[Card]] = []
-        for pair in itertools.combinations(self.cards, 2):
-            if BigTwo.is_valid_card_combination(list(pair)):
-                self.pairs.append(pair)
+        self.pairs: List[Tuple[Card, Card]] = [
+            pair
+            for pair in itertools.combinations(self.cards, 2)
+            if BigTwo.is_valid_card_combination(pair)
+        ]
 
         self.combinations = find_combinations_from_cards(self.cards)
 
-        super().__init__()
-
-    def have_diamond_three(self):
+    def have_diamond_three(self) -> bool:
         for card in self.cards:
             if card.suit == Suit.diamond and card.rank == Rank.three:
                 return True
 
         return False
 
-    def remove_cards(self, to_remove: List[Card]):
+    def remove_cards(self, to_remove: List[Card]) -> None:
         for card in to_remove:
             self.cards.remove(card)
             self.__remove_combinations(card)
@@ -304,25 +310,18 @@ class BigTwo:
     UNKNOWN_PLAYER = 5
 
     def __init__(self, hands: Optional[List[BigTwoHand]] = None):
-        if hands is None:
-            self.player_hands: List[BigTwoHand] = self.__create_player_hand()
-        else:
-            if len(hands) != self.number_of_players():
-                raise ValueError("expected to have 4 BigTwoHand")
+        self.player_hands: List[BigTwoHand] = hands or self.__create_player_hand()
+        if len(self.player_hands) != self.number_of_players():
+            raise ValueError("expected to have 4 BigTwoHand")
 
-            self.player_hands: List[BigTwoHand] = hands
         self.state: List[Tuple[int, List[Card]]] = []
         self.past_actions: List[Tuple[int, List[Card]]] = []
-        self.current_player = None
-        self.player_last_played = None
         self.n = 4
 
-        self.event_count = {}
+        self.event_count: dict[str, int] = {}
 
-        if self.current_player is None:
-            for idx, player_hand in enumerate(self.player_hands):
-                if player_hand.have_diamond_three():
-                    self.current_player = idx
+        self.current_player = self._get_player_with_diamond_three()
+        self.player_last_played = BigTwo.UNKNOWN_PLAYER
 
     @staticmethod
     def combination_order():
@@ -339,7 +338,7 @@ class BigTwo:
         return 4
 
     @staticmethod
-    def is_valid_card_combination(cards: List[Card]) -> bool:
+    def is_valid_card_combination(cards: Sequence[Card]) -> bool:
         if len(cards) == 1:
             return True
 
@@ -377,39 +376,34 @@ class BigTwo:
         return BigTwo.is_straight(cards)
 
     @staticmethod
-    def is_straight(cards: List[Card]) -> bool:
-        if len(cards) != 5:
+    def is_straight(cards: Sequence[Card]) -> bool:
+        if len(cards) != NUM_OF_CARD_FOR_COMBINATIONS:
             return False
 
-        rank_map = {}
+        card_count_by_rank: dict[Rank, int] = {}
         for c in cards:
-            rank_map[c.rank] = rank_map.get(c.rank, 0) + 1
+            card_count_by_rank[c.rank] = card_count_by_rank.get(c.rank, 0) + 1
 
-        if len(rank_map.keys()) != 5:
+        if len(card_count_by_rank.keys()) != NUM_OF_CARD_FOR_COMBINATIONS:
             return False
 
         # straight_rank_order starts from ace, two, ... to king
-        sorted_rank = sorted(rank_map.keys(), key=lambda r: STRAIGHT_RANK_ORDER[r])
+        sorted_rank = sorted(
+            card_count_by_rank.keys(), key=lambda r: STRAIGHT_RANK_ORDER[r]
+        )
 
         first_rank_order = STRAIGHT_RANK_ORDER[sorted_rank[0]]
         last_rank_order = STRAIGHT_RANK_ORDER[sorted_rank[4]]
 
-        # generaly the first and last card of a straight is 4 rank aparts
+        # Generally the first and last card of a straight is 4 rank aparts.
         if first_rank_order + 4 == last_rank_order:
             return True
 
-        """
-        special case:
-        ten jack queen king ace
-        """
-
-        if sorted_rank[0] == Rank.ace and sorted_rank[1] == Rank.ten:
-            return True
-
-        return False
+        # Special case: ten jack queen king ace
+        return sorted_rank[0] == Rank.ace and sorted_rank[1] == Rank.ten
 
     @staticmethod
-    def is_bigger(cards: List[Card], current_combination: List[Card]) -> bool:
+    def is_bigger(cards: Sequence[Card], current_combination: List[Card]) -> bool:
         if len(cards) is not len(current_combination):
             return False
 
@@ -431,8 +425,8 @@ class BigTwo:
 
             return rank_one > rank_two
 
-        combination_one = BigTwo.get_five_card_type(cards)
-        combination_two = BigTwo.get_five_card_type(current_combination)
+        combination_one = BigTwo.get_combination_type(cards)
+        combination_two = BigTwo.get_combination_type(current_combination)
 
         combination_order = BigTwo.combination_order()
         if combination_one != combination_two:
@@ -492,12 +486,12 @@ class BigTwo:
         return RANK_ORDER[common_one_rank] > RANK_ORDER[common_two_rank]
 
     @staticmethod
-    def get_five_card_type(cards: List[Card]):
+    def get_combination_type(cards: Sequence[Card]):
         if len(cards) != 5:
             raise ValueError("Need 5 cards to determine what type")
 
         is_same_suit = True
-        card_rank_count = {}
+        card_rank_count: dict[Rank, int] = {}
         current_suit = cards[0].suit
 
         for card in cards:
@@ -624,15 +618,17 @@ class BigTwo:
         self.past_actions = []
         self.event_count = {}
 
-        self.current_player = None
-        self.player_last_played = None
-
-        if self.current_player is None:
-            for idx, player_hand in enumerate(self.player_hands):
-                if player_hand.have_diamond_three():
-                    self.current_player = idx
+        self.current_player = self._get_player_with_diamond_three()
+        self.player_last_played = BigTwo.UNKNOWN_PLAYER
 
         return self._current_observation(self._get_current_player())
+
+    def _get_player_with_diamond_three(self) -> int:
+        for idx, player_hand in enumerate(self.player_hands):
+            if player_hand.have_diamond_three():
+                return idx
+
+        raise ValueError("at least one player should have diamon three in their hand")
 
     def is_rank_gt(self, rank_one: Rank, rank_two: Rank) -> bool:
         return RANK_ORDER[rank_one] > RANK_ORDER[rank_two]
@@ -667,8 +663,8 @@ class BigTwo:
     def __have_playable_double_card(
         self, pairs: List[Card], player_hand: BigTwoHand
     ) -> bool:
-        rank_freq = {}
-        rank_cards = {}
+        rank_freq: dict[Rank, int] = {}
+        rank_cards: dict[Rank, list[Card]] = {}
         target_rank = pairs[0].rank
         for card in player_hand:
             rank_freq[card.rank] = rank_freq.get(card.rank, 0) + 1
@@ -701,7 +697,7 @@ class BigTwo:
         if len(player_hand) < 5:
             return False
 
-        current_c_type = BigTwo.get_five_card_type(last_played_cards)
+        current_c_type = BigTwo.get_combination_type(last_played_cards)
         curr_c_type_rank = BigTwo.combination_order()[current_c_type]
 
         greater_c_type = [
@@ -777,11 +773,7 @@ class BigTwo:
         return self.current_player
 
     def get_player_last_played(self) -> int:
-        return (
-            self.player_last_played
-            if self.player_last_played is not None
-            else self.UNKNOWN_PLAYER
-        )
+        return self.player_last_played
 
     def _current_observation(self, player_number: int) -> BigTwoObservation:
         num_card_per_player = []

@@ -35,6 +35,10 @@ pytest = "^7.1.2"
 [tool.isort]
 profile = "black"
 
+[tool.mypy]
+install_types = true
+
+
 [build-system]
 requires = ["poetry-core>=1.0.0"]
 build-backend = "poetry.core.masonry.api"
