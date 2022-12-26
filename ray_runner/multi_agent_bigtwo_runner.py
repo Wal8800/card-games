@@ -11,7 +11,7 @@ from ray import shutdown, tune
 from ray.rllib.algorithms.callbacks import MultiCallbacks
 from ray.rllib.algorithms.ppo import PPOConfig
 from ray.rllib.algorithms.ppo.ppo import PPO
-from ray.rllib.execution import synchronous_parallel_sample, train_one_step
+from ray.rllib.execution import synchronous_parallel_sample
 from ray.rllib.execution.common import LEARN_ON_BATCH_TIMER
 from ray.rllib.execution.rollout_ops import standardize_fields as standardize_fields_fn
 from ray.rllib.execution.train_ops import multi_gpu_train_one_step
@@ -65,7 +65,6 @@ class ParametricActionsModel(TFModelV2):
         # Mask out invalid actions (use tf.float32.min for stability)
         # inf_mask_alt = tf.maximum(tf.math.log(tf.cast(action_mask, action_logits.dtype)), action_logits.dtype.min)
         inf_mask = (1.0 - tf.cast(action_mask, action_logits.dtype)) * -1e9
-        # print(inf_mask.shape, inf_mask.dtype, inf_mask_alt.shape, inf_mask_alt.dtype)
         """
         (1 - 1) * -1e9 = 0 for valid actions
         (1 - 0) * -1e9 = -1e9 for invalid actions

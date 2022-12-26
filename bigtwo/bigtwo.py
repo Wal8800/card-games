@@ -1,7 +1,7 @@
 import itertools
 from collections import Counter
 from collections.abc import MutableSequence
-from typing import Dict, List, Optional, Tuple, Sequence
+from typing import Dict, List, Optional, Sequence, Tuple
 
 from playingcards.card import Card, Deck, Rank, Suit
 
