@@ -1,5 +1,6 @@
 import copy
 import itertools
+import multiprocessing
 import pickle
 import time
 from collections import Counter
@@ -117,8 +118,9 @@ def sample_worker(input_queue: Queue, output: Queue):
 def run_benchmark_hands_list():
     NUMBER_OF_PROCESSES = 10
 
-    task_queue = Queue()
-    output_queue = Queue()
+    manager = multiprocessing.Manager()
+    task_queue = manager.Queue()
+    output_queue = manager.Queue()
 
     benchmark_result = []
 

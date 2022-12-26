@@ -1,5 +1,6 @@
 import copy
 import itertools
+import multiprocessing
 import pickle
 import traceback
 from collections import Counter
@@ -124,6 +125,7 @@ def create_bots():
             num_gpus_per_worker=1,
         )
         .rollouts(num_rollout_workers=0)
+        .environment(disable_env_checking=True)
     )
 
     ray_agent = config.build(env=env_name)
@@ -147,8 +149,9 @@ def create_bots():
 def run_multi_agent_env_bench_mark():
     NUMBER_OF_PROCESSES = 10
 
-    task_queue = Queue()
-    output_queue = Queue()
+    manager = multiprocessing.Manager()
+    task_queue = manager.Queue()
+    output_queue = manager.Queue()
 
     benchmark_result = []
 

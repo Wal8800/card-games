@@ -10,3 +10,5 @@ venv
 /ray_runner/temp_ray_results/
 /ray_runner/results/bigtwo_v1/
 *.pickle
+/.mypy_cache/
+/.pytest_cache/
